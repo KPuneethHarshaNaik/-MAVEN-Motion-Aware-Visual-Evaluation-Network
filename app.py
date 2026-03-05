@@ -16,9 +16,9 @@ import torch
 import cv2
 from PIL import Image
 from flask import Flask, request, jsonify, render_template, send_from_directory
-from torchvision import transforms
 
-from video_model import VideoASDClassifier
+from video_model   import VideoASDClassifier
+from video_dataset import VideoTransform, _sample_frames as _ds_sample_frames
 
 # ── Config ────────────────────────────────────────────────────────────────────
 CHECKPOINT = os.path.join(os.path.dirname(__file__), "checkpoints", "video_model_best.pth")
@@ -62,8 +62,6 @@ def get_model():
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-_normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                  std =[0.229, 0.224, 0.225])
 
 def _frame_to_b64(frame_bgr: np.ndarray, thumb_size: int = 160) -> str:
     """Convert BGR numpy frame to base64 JPEG string for the frontend."""
@@ -80,37 +78,23 @@ def _frame_to_b64(frame_bgr: np.ndarray, thumb_size: int = 160) -> str:
 
 def _sample_frames(video_path: str, n: int, size: int):
     """
-    Uniformly sample n frames from a video.
+    Uniformly sample n frames from a video using the EXACT same pipeline
+    as training (VideoTransform from video_dataset.py).
     Returns:
-        tensor  : (1, n, 3, size, size)   normalised for model
-        thumbs  : list[str]               base64 thumbnails
-        raw_frames: list[ndarray]         raw BGR frames
+        tensor     : (1, n, 3, size, size)  normalised for model
+        thumbs     : list[str]              base64 JPEG thumbnails
+        raw_frames : list[ndarray]          raw BGR frames
     """
-    cap = cv2.VideoCapture(video_path)
-    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    if total <= 0:
-        total = 9999
-    indices = [int(i * total / n) for i in range(n)]
+    # Use the identical sampling function from video_dataset.py
+    raw_frames = _ds_sample_frames(video_path, n_frames=n, strategy="uniform")
 
-    raw_frames, thumb_list, tensor_list = [], [], []
-    for idx in indices:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
-        ret, frame = cap.read()
-        if not ret:
-            # Fallback: black frame
-            frame = np.zeros((size, size, 3), dtype=np.uint8)
-        raw_frames.append(frame)
-        thumb_list.append(_frame_to_b64(frame, thumb_size=160))
+    # Thumbnails from raw BGR frames
+    thumb_list = [_frame_to_b64(f, thumb_size=160) for f in raw_frames]
 
-        # Preprocess for model
-        rgb   = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        resized = cv2.resize(rgb, (size, size))
-        t     = torch.from_numpy(resized).permute(2, 0, 1).float() / 255.0
-        t     = _normalize(t)
-        tensor_list.append(t)
-    cap.release()
+    # Use the identical transform pipeline from training
+    tfm = VideoTransform(img_size=size)
+    video_tensor = tfm(raw_frames).unsqueeze(0)   # (1, n, 3, H, W)
 
-    video_tensor = torch.stack(tensor_list).unsqueeze(0)  # (1, n, 3, H, W)
     return video_tensor, thumb_list, raw_frames
 
 
