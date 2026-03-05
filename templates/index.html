@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MAVEN — ASD Screening Pipeline</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+/* ──── Reset & Base ──────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0e1a;--bg2:#111827;--bg3:#1e293b;
+  --accent:#6366f1;--accent2:#22d3ee;--accent3:#f472b6;
+  --green:#10b981;--red:#f87171;--yellow:#fbbf24;
+  --text:#e2e8f0;--muted:#94a3b8;--border:#334155;
+  --glow:rgba(99,102,241,.35);
+}
+html{height:100%}
+body{
+  background:var(--bg);color:var(--text);
+  font-family:'Inter',system-ui,sans-serif;
+  min-height:100vh;overflow-x:hidden;
+}
+
+/* ──── Header ─────────────────────────────────────────────── */
+header{
+  padding:20px 32px;
+  background:linear-gradient(90deg,rgba(99,102,241,.15),rgba(34,211,238,.08));
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:100;backdrop-filter:blur(12px);
+}
+.logo{display:flex;align-items:center;gap:12px}
+.logo svg{width:36px;height:36px;flex-shrink:0}
+.logo-text h1{font-size:1.3rem;font-weight:700;letter-spacing:.5px}
+.logo-text p{font-size:.75rem;color:var(--muted);margin-top:1px}
+.badge{
+  display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;
+}
+.badge span{
+  font-size:.7rem;padding:3px 10px;border-radius:99px;
+  background:rgba(255,255,255,.06);border:1px solid var(--border);color:var(--muted);
+}
+.badge span.good{color:var(--green);border-color:rgba(16,185,129,.4)}
+
+/* ──── Main Layout ───────────────────────────────────────── */
+main{max-width:1400px;margin:0 auto;padding:32px 24px}
+
+/* ──── Upload Zone ───────────────────────────────────────── */
+#upload-section{margin-bottom:36px}
+#drop-zone{
+  border:2px dashed var(--border);border-radius:16px;
+  padding:56px 32px;text-align:center;
+  background:var(--bg2);cursor:pointer;
+  transition:all .3s ease;position:relative;overflow:hidden;
+}
+#drop-zone::before{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(ellipse at 50% 0,rgba(99,102,241,.12),transparent 70%);
+  pointer-events:none;
+}
+#drop-zone.over{
+  border-color:var(--accent);
+  background:rgba(99,102,241,.08);
+  box-shadow:0 0 32px var(--glow);
+}
+#drop-zone.has-file{border-color:var(--green);border-style:solid}
+#drop-zone svg.upload-icon{width:52px;height:52px;margin:0 auto 16px;color:var(--muted)}
+#drop-zone h2{font-size:1.15rem;margin-bottom:6px}
+#drop-zone p{font-size:.875rem;color:var(--muted)}
+#file-input{display:none}
+.btn-primary{
+  margin-top:20px;padding:10px 28px;
+  background:linear-gradient(135deg,var(--accent),#818cf8);
+  color:#fff;border:none;border-radius:8px;
+  font-size:.9rem;font-weight:600;cursor:pointer;
+  transition:opacity .2s,transform .15s;display:inline-block;
+}
+.btn-primary:hover{opacity:.9;transform:translateY(-1px)}
+#file-name{
+  margin-top:14px;font-size:.85rem;color:var(--accent2);
+  display:none;font-family:monospace;
+}
+
+/* ──── Video Preview ─────────────────────────────────────── */
+#preview-bar{
+  display:none;margin-top:24px;
+  background:var(--bg2);border:1px solid var(--border);border-radius:12px;
+  padding:16px 20px;
+  display:none;align-items:center;gap:20px;flex-wrap:wrap;
+}
+#preview-video{
+  width:200px;height:120px;object-fit:cover;
+  border-radius:8px;border:1px solid var(--border);
+}
+#video-stats{flex:1;min-width:200px}
+#video-stats h3{font-size:.9rem;font-weight:600;margin-bottom:8px;color:var(--accent2)}
+.stat-row{display:flex;gap:16px;flex-wrap:wrap}
+.stat{
+  background:rgba(255,255,255,.04);border:1px solid var(--border);
+  border-radius:8px;padding:6px 14px;font-size:.8rem;
+}
+.stat span{color:var(--muted);margin-right:4px}
+#run-btn{
+  padding:12px 32px;font-size:1rem;
+  background:linear-gradient(135deg,var(--green),#34d399);color:#000;
+  border:none;border-radius:10px;font-weight:700;cursor:pointer;
+  transition:all .2s;white-space:nowrap;
+}
+#run-btn:hover{transform:scale(1.04);box-shadow:0 4px 24px rgba(16,185,129,.4)}
+#run-btn:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
+
+/* ──── Pipeline ──────────────────────────────────────────── */
+#pipeline-section{display:none}
+.section-title{
+  font-size:1.1rem;font-weight:700;margin-bottom:20px;
+  display:flex;align-items:center;gap:10px;color:var(--accent2);
+}
+.section-title::before{
+  content:'';width:4px;height:20px;background:var(--accent2);border-radius:2px;display:block;
+}
+
+/* Horizontal stage track */
+.pipeline-track{
+  display:flex;align-items:stretch;gap:0;
+  overflow-x:auto;padding-bottom:8px;
+  margin-bottom:40px;
+}
+.stage-arrow{
+  display:flex;align-items:center;justify-content:center;
+  width:36px;flex-shrink:0;color:var(--border);
+  font-size:1.4rem;
+}
+.stage-arrow.active{color:var(--accent)}
+
+.stage-card{
+  flex:1;min-width:160px;max-width:220px;
+  background:var(--bg2);border:1px solid var(--border);border-radius:12px;
+  padding:16px 14px;flex-shrink:0;
+  transition:all .4s ease;position:relative;overflow:hidden;
+}
+.stage-card::after{
+  content:'';position:absolute;top:0;left:0;right:0;height:3px;
+  background:var(--border);border-radius:2px 2px 0 0;
+}
+.stage-card.active::after{background:var(--accent)}
+.stage-card.done::after{background:var(--green)}
+.stage-card.active{
+  border-color:var(--accent);
+  box-shadow:0 0 20px var(--glow);
+}
+.stage-card.done{border-color:rgba(16,185,129,.5)}
+.stage-num{
+  font-size:.7rem;font-weight:700;color:var(--muted);
+  letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;
+}
+.stage-card.active .stage-num{color:var(--accent)}
+.stage-card.done .stage-num{color:var(--green)}
+.stage-icon{font-size:1.8rem;margin-bottom:8px;display:block}
+.stage-name{font-size:.9rem;font-weight:600;margin-bottom:4px}
+.stage-desc{font-size:.72rem;color:var(--muted);line-height:1.4}
+.stage-timing{
+  font-size:.7rem;color:var(--accent2);margin-top:8px;font-family:monospace;
+  display:none;
+}
+.stage-card.done .stage-timing{display:block}
+
+/* Spinner */
+.spin{
+  display:none;width:18px;height:18px;
+  border:2px solid rgba(99,102,241,.25);border-top-color:var(--accent);
+  border-radius:50%;animation:spin .7s linear infinite;
+  position:absolute;top:12px;right:12px;
+}
+.stage-card.active .spin{display:block}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ──── Detail Panels ─────────────────────────────────────── */
+.detail-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(420px,1fr));
+  gap:24px;margin-bottom:32px;
+}
+
+.panel{
+  background:var(--bg2);border:1px solid var(--border);border-radius:16px;
+  padding:24px;opacity:0;transform:translateY(16px);
+  transition:opacity .5s ease,transform .5s ease;
+}
+.panel.visible{opacity:1;transform:translateY(0)}
+.panel-title{
+  font-size:.95rem;font-weight:600;margin-bottom:16px;
+  display:flex;align-items:center;gap:8px;
+}
+.panel-title .dot{
+  width:10px;height:10px;border-radius:50%;display:inline-block;flex-shrink:0;
+}
+.dot-blue{background:var(--accent)}
+.dot-cyan{background:var(--accent2)}
+.dot-pink{background:var(--accent3)}
+.dot-green{background:var(--green)}
+
+/* Frame grid */
+#frame-grid{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:6px;
+}
+.frame-thumb{
+  border-radius:6px;overflow:hidden;position:relative;cursor:pointer;
+  border:2px solid transparent;transition:border-color .2s,box-shadow .2s;
+}
+.frame-thumb.top{border-color:var(--yellow);box-shadow:0 0 12px rgba(251,191,36,.4)}
+.frame-thumb img{width:100%;display:block;aspect-ratio:4/3;object-fit:cover}
+.frame-thumb .frame-num{
+  position:absolute;bottom:2px;left:3px;
+  font-size:.6rem;font-family:monospace;
+  background:rgba(0,0,0,.7);padding:1px 4px;border-radius:3px;color:#fff;
+}
+.frame-thumb .weight-badge{
+  position:absolute;top:2px;right:3px;
+  font-size:.6rem;font-family:monospace;
+  background:rgba(251,191,36,.85);padding:1px 4px;border-radius:3px;color:#000;
+  display:none;
+}
+.frame-thumb.top .weight-badge{display:block}
+
+/* Charts */
+.chart-wrap{position:relative;height:180px}
+
+/* ──── Result Panel ──────────────────────────────────────── */
+#result-section{display:none;margin-bottom:40px}
+.result-card{
+  background:linear-gradient(135deg,var(--bg2),var(--bg3));
+  border:2px solid var(--border);border-radius:20px;
+  padding:36px 40px;text-align:center;
+  position:relative;overflow:hidden;
+}
+.result-card.asd{border-color:rgba(248,113,113,.5);box-shadow:0 0 40px rgba(248,113,113,.15)}
+.result-card.td {border-color:rgba(16,185,129,.5); box-shadow:0 0 40px rgba(16,185,129,.15)}
+.result-label{font-size:2.2rem;font-weight:800;margin-bottom:4px}
+.result-label.asd{color:var(--red)}
+.result-label.td {color:var(--green)}
+.result-sublabel{font-size:.95rem;color:var(--muted);margin-bottom:28px}
+
+.prob-bars{max-width:440px;margin:0 auto 28px;display:flex;flex-direction:column;gap:14px}
+.prob-row{display:flex;align-items:center;gap:12px}
+.prob-row label{width:50px;font-size:.85rem;font-weight:600;text-align:right;flex-shrink:0}
+.bar-track{flex:1;height:22px;background:rgba(255,255,255,.06);border-radius:99px;overflow:hidden}
+.bar-fill{height:100%;border-radius:99px;width:0;transition:width 1.2s cubic-bezier(.25,.46,.45,.94)}
+.bar-asd{background:linear-gradient(90deg,#f87171,#fb923c)}
+.bar-td {background:linear-gradient(90deg,#10b981,#34d399)}
+.prob-pct{width:52px;font-size:.85rem;font-family:monospace;font-weight:700;text-align:left;flex-shrink:0}
+
+.confidence-ring{
+  width:100px;height:100px;margin:0 auto 20px;position:relative;
+}
+.confidence-ring svg{transform:rotate(-90deg)}
+.ring-bg{fill:none;stroke:rgba(255,255,255,.08);stroke-width:8}
+.ring-fill{
+  fill:none;stroke-width:8;stroke-linecap:round;
+  stroke-dasharray:283;stroke-dashoffset:283;
+  transition:stroke-dashoffset 1.2s cubic-bezier(.25,.46,.45,.94);
+}
+.ring-text{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+}
+.ring-pct{font-size:1.3rem;font-weight:800}
+.ring-lbl{font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+
+.why-box{
+  max-width:600px;margin:20px auto 0;text-align:left;
+  background:rgba(255,255,255,.04);border:1px solid var(--border);
+  border-radius:12px;padding:16px 20px;
+}
+.why-box h4{font-size:.8rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px}
+.why-box p{font-size:.875rem;line-height:1.65;color:var(--text)}
+
+.timing-row{
+  display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:24px;
+}
+.timing-chip{
+  font-size:.72rem;font-family:monospace;
+  background:rgba(255,255,255,.04);border:1px solid var(--border);
+  border-radius:6px;padding:4px 10px;color:var(--muted);
+}
+.timing-chip span{color:var(--accent2)}
+
+/* ──── Error ─────────────────────────────────────────────── */
+#error-box{
+  display:none;padding:16px 20px;
+  background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.4);
+  border-radius:10px;margin-top:16px;color:var(--red);font-size:.875rem;
+}
+
+/* ──── Responsive ────────────────────────────────────────── */
+@media(max-width:700px){
+  .detail-grid{grid-template-columns:1fr}
+  main{padding:20px 12px}
+  .result-card{padding:24px 20px}
+  header{flex-direction:column;gap:10px;align-items:flex-start}
+}
+
+/* ──── Scrollbar ─────────────────────────────────────────── */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+/* ──── Keyframes ─────────────────────────────────────────── */
+@keyframes pulse-glow{0%,100%{box-shadow:0 0 20px var(--glow)}50%{box-shadow:0 0 36px rgba(99,102,241,.55)}}
+.stage-card.active{animation:pulse-glow 2s ease infinite}
+
+/* ──── Particle background (subtle) ─────────────────────── */
+#bg-canvas{position:fixed;inset:0;z-index:-1;opacity:.35}
+</style>
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+
+<!-- ──── Header ──────────────────────────────────────────── -->
+<header>
+  <div class="logo">
+    <svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="18" cy="18" r="17" stroke="#6366f1" stroke-width="1.5"/>
+      <circle cx="9"  cy="18" r="3" fill="#6366f1"/>
+      <circle cx="18" cy="9"  r="3" fill="#22d3ee"/>
+      <circle cx="27" cy="18" r="3" fill="#f472b6"/>
+      <circle cx="18" cy="27" r="3" fill="#10b981"/>
+      <line x1="9"  y1="18" x2="18" y2="9"  stroke="#6366f1" stroke-width="1.2"/>
+      <line x1="18" y1="9"  x2="27" y2="18" stroke="#22d3ee" stroke-width="1.2"/>
+      <line x1="27" y1="18" x2="18" y2="27" stroke="#f472b6" stroke-width="1.2"/>
+      <line x1="18" y1="27" x2="9"  y2="18" stroke="#10b981" stroke-width="1.2"/>
+      <line x1="9"  y1="18" x2="27" y2="18" stroke="rgba(255,255,255,.2)" stroke-width=".8" stroke-dasharray="3 2"/>
+      <line x1="18" y1="9"  x2="18" y2="27" stroke="rgba(255,255,255,.2)" stroke-width=".8" stroke-dasharray="3 2"/>
+    </svg>
+    <div class="logo-text">
+      <h1>MAVEN</h1>
+      <p>Motion-Aware Visual Evaluation Network &mdash; ASD Screening</p>
+    </div>
+  </div>
+  <div class="badge" id="header-badge">
+    <span id="badge-epoch">Loading…</span>
+    <span id="badge-auc" class="good"></span>
+    <span id="badge-acc" class="good"></span>
+    <span id="badge-device"></span>
+  </div>
+</header>
+
+<!-- ──── Main ─────────────────────────────────────────────── -->
+<main>
+
+<!-- Upload -->
+<section id="upload-section">
+  <div id="drop-zone" onclick="document.getElementById('file-input').click()">
+    <svg class="upload-icon" fill="none" viewBox="0 0 52 52" stroke="currentColor" stroke-width="1.5">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M26 34V18m0 0-6 6m6-6 6 6"/>
+      <path stroke-linecap="round" d="M10 36c-4 0-7-3-7-7a7 7 0 0 1 6.5-7A10 10 0 0 1 26 13a10 10 0 0 1 16.5 9A7 7 0 0 1 49 29c0 4-3 7-7 7H10Z"/>
+    </svg>
+    <h2>Drop a toddler video here</h2>
+    <p>MP4, AVI, MOV — up to 200 MB</p>
+    <button class="btn-primary" onclick="event.stopPropagation()">Browse files</button>
+    <div id="file-name"></div>
+  </div>
+  <input type="file" id="file-input" accept="video/*">
+
+  <div id="preview-bar">
+    <video id="preview-video" muted autoplay loop playsinline></video>
+    <div id="video-stats">
+      <h3>Video Details</h3>
+      <div class="stat-row" id="stat-row"></div>
+    </div>
+    <button id="run-btn" onclick="runPrediction()">&#9654; Run Screening</button>
+  </div>
+  <div id="error-box"></div>
+</section>
+
+<!-- Pipeline Stages Track -->
+<section id="pipeline-section">
+  <div class="section-title">Live Pipeline</div>
+
+  <div class="pipeline-track">
+    <!-- Stage 1 -->
+    <div class="stage-card" id="s1">
+      <div class="spin"></div>
+      <div class="stage-num">Stage 01</div>
+      <span class="stage-icon">&#127909;</span>
+      <div class="stage-name">Video Ingestion</div>
+      <div class="stage-desc">Read metadata, validate codec, measure duration & resolution</div>
+      <div class="stage-timing" id="t1"></div>
+    </div>
+    <div class="stage-arrow" id="a1">&#8594;</div>
+
+    <!-- Stage 2 -->
+    <div class="stage-card" id="s2">
+      <div class="spin"></div>
+      <div class="stage-num">Stage 02</div>
+      <span class="stage-icon">&#127775;</span>
+      <div class="stage-name">Frame Sampling</div>
+      <div class="stage-desc">Uniformly extract 16 representative frames at 96×96 px</div>
+      <div class="stage-timing" id="t2"></div>
+    </div>
+    <div class="stage-arrow" id="a2">&#8594;</div>
+
+    <!-- Stage 3 -->
+    <div class="stage-card" id="s3">
+      <div class="spin"></div>
+      <div class="stage-num">Stage 03</div>
+      <span class="stage-icon">&#129302;</span>
+      <div class="stage-name">CNN Encoding</div>
+      <div class="stage-desc">MobileNetV3-Small extracts 256-dim feature vector per frame</div>
+      <div class="stage-timing" id="t3"></div>
+    </div>
+    <div class="stage-arrow" id="a3">&#8594;</div>
+
+    <!-- Stage 4 -->
+    <div class="stage-card" id="s4">
+      <div class="spin"></div>
+      <div class="stage-num">Stage 04</div>
+      <span class="stage-icon">&#128200;</span>
+      <div class="stage-name">BiLSTM + Attention</div>
+      <div class="stage-desc">2-layer BiLSTM captures temporal patterns; 4-head self-attention weights key moments</div>
+      <div class="stage-timing" id="t4"></div>
+    </div>
+    <div class="stage-arrow" id="a4">&#8594;</div>
+
+    <!-- Stage 5 -->
+    <div class="stage-card" id="s5">
+      <div class="spin"></div>
+      <div class="stage-num">Stage 05</div>
+      <span class="stage-icon">&#129302;</span>
+      <div class="stage-name">Prediction</div>
+      <div class="stage-desc">MLP classifier produces ASD vs TD probability and confidence score</div>
+      <div class="stage-timing" id="t5"></div>
+    </div>
+  </div>
+
+  <!-- Detail panels -->
+  <div class="detail-grid">
+
+    <!-- Frame thumbnails -->
+    <div class="panel" id="panel-frames">
+      <div class="panel-title"><span class="dot dot-cyan"></span>Extracted Frames (16 of <span id="total-frames">?</span>)</div>
+      <div id="frame-grid"></div>
+      <p style="font-size:.72rem;color:var(--muted);margin-top:10px">
+        &#9733; Yellow border = frames the model found most discriminative (top attention weight)
+      </p>
+    </div>
+
+    <!-- CNN feature energy -->
+    <div class="panel" id="panel-cnn">
+      <div class="panel-title"><span class="dot dot-blue"></span>CNN Feature Energy per Frame</div>
+      <div class="chart-wrap"><canvas id="cnn-chart"></canvas></div>
+      <p style="font-size:.72rem;color:var(--muted);margin-top:8px">
+        L2 norm of 256-dim MobileNetV3 feature vector — higher ≈ richer visual content
+      </p>
+    </div>
+
+    <!-- Temporal attention -->
+    <div class="panel" id="panel-attn">
+      <div class="panel-title"><span class="dot dot-pink"></span>Temporal Attention Weights</div>
+      <div class="chart-wrap"><canvas id="attn-chart"></canvas></div>
+      <p style="font-size:.72rem;color:var(--muted);margin-top:8px">
+        Self-attention score assigned to each frame — the model's "focus" over time
+      </p>
+    </div>
+
+    <!-- Architecture summary -->
+    <div class="panel" id="panel-arch">
+      <div class="panel-title"><span class="dot dot-green"></span>Model Architecture</div>
+      <div style="font-size:.82rem;line-height:2;font-family:monospace;color:var(--muted)">
+        <div><span style="color:var(--accent2)">Input</span>  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(1, 16, 3, 96, 96)</div>
+        <div>&nbsp;&nbsp;&#8595;</div>
+        <div><span style="color:var(--accent)">FrameEncoder</span> &times;16 frames</div>
+        <div style="padding-left:16px;font-size:.75rem;color:var(--border)">MobileNetV3-Small → Linear(576,256) → LN → GELU → Dropout</div>
+        <div>&nbsp;&nbsp;&#8595; (1, 16, 256) + pos_emb</div>
+        <div><span style="color:var(--accent)">BiLSTM</span>  &nbsp;&nbsp;× 2 layers, hidden=256, bidirectional</div>
+        <div style="padding-left:16px;font-size:.75rem;color:var(--border)">&rarr; (1, 16, 512)</div>
+        <div>&nbsp;&nbsp;&#8595;</div>
+        <div><span style="color:var(--accent3)">SelfAttention</span> 4 heads, d=512</div>
+        <div style="padding-left:16px;font-size:.75rem;color:var(--border)">&rarr; weighted pool &rarr; (1, 512)</div>
+        <div>&nbsp;&nbsp;&#8595;</div>
+        <div><span style="color:var(--green)">MLP</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;512 &rarr; 128 &rarr; 1 (sigmoid)</div>
+        <div style="margin-top:8px;font-size:.8rem">
+          <span style="color:var(--muted)">Parameters: </span><span style="color:var(--text)" id="arch-params">4,874,275</span>
+          &nbsp;&middot;&nbsp;
+          <span style="color:var(--muted)">Device: </span><span style="color:var(--accent2)" id="arch-device">—</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ──── Result ───────────────────────────────────────────── -->
+<section id="result-section">
+  <div class="section-title">Screening Result</div>
+
+  <div class="result-card" id="result-card">
+
+    <div class="confidence-ring">
+      <svg width="100" height="100" viewBox="0 0 100 100">
+        <circle class="ring-bg" cx="50" cy="50" r="45"/>
+        <circle class="ring-fill" id="ring-fill" cx="50" cy="50" r="45" stroke="#6366f1"/>
+      </svg>
+      <div class="ring-text">
+        <span class="ring-pct" id="ring-pct">—</span>
+        <span class="ring-lbl">confidence</span>
+      </div>
+    </div>
+
+    <div class="result-label" id="result-label">—</div>
+    <div class="result-sublabel" id="result-sublabel"></div>
+
+    <div class="prob-bars">
+      <div class="prob-row">
+        <label style="color:var(--red)">ASD</label>
+        <div class="bar-track"><div class="bar-fill bar-asd" id="bar-asd"></div></div>
+        <div class="prob-pct" id="pct-asd" style="color:var(--red)">0%</div>
+      </div>
+      <div class="prob-row">
+        <label style="color:var(--green)">TD</label>
+        <div class="bar-track"><div class="bar-fill bar-td" id="bar-td"></div></div>
+        <div class="prob-pct" id="pct-td" style="color:var(--green)">0%</div>
+      </div>
+    </div>
+
+    <div class="why-box">
+      <h4>Model Reasoning</h4>
+      <p id="why-text"></p>
+    </div>
+
+    <div class="timing-row" id="timing-row"></div>
+
+    <p style="font-size:.72rem;color:var(--muted);margin-top:24px;max-width:500px;margin-left:auto;margin-right:auto">
+      &#9888; This is an AI-assisted screening aid only. A formal ASD diagnosis must be made by a licensed clinician using standardised instruments (ADOS-2, ADI-R).
+    </p>
+  </div>
+</section>
+
+</main>
+
+<script>
+/* ──────────────────────────────────────────────────────────
+   Particle background
+────────────────────────────────────────────────────────── */
+(function(){
+  const c = document.getElementById('bg-canvas');
+  const ctx = c.getContext('2d');
+  let W,H,pts=[];
+  function resize(){W=c.width=innerWidth;H=c.height=innerHeight}
+  resize(); window.addEventListener('resize',resize);
+  for(let i=0;i<60;i++) pts.push({
+    x:Math.random()*1400,y:Math.random()*900,
+    vx:(Math.random()-.5)*.2,vy:(Math.random()-.5)*.2,
+    r:Math.random()*1.5+.5
+  });
+  function frame(){
+    ctx.clearRect(0,0,W,H);
+    pts.forEach(p=>{
+      p.x+=p.vx; p.y+=p.vy;
+      if(p.x<0||p.x>W) p.vx*=-1;
+      if(p.y<0||p.y>H) p.vy*=-1;
+      ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+      ctx.fillStyle='rgba(99,102,241,.5)';ctx.fill();
+    });
+    pts.forEach((a,i)=>pts.slice(i+1).forEach(b=>{
+      const d=Math.hypot(a.x-b.x,a.y-b.y);
+      if(d<120){
+        ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);
+        ctx.strokeStyle=`rgba(99,102,241,${(1-d/120)*.3})`;ctx.lineWidth=.6;ctx.stroke();
+      }
+    }));
+    requestAnimationFrame(frame);
+  }
+  frame();
+})();
+
+/* ──────────────────────────────────────────────────────────
+   Load model meta
+────────────────────────────────────────────────────────── */
+fetch('/model_info').then(r=>r.json()).then(d=>{
+  document.getElementById('badge-epoch').textContent = `Epoch ${d.epoch}`;
+  document.getElementById('badge-auc').textContent   = `AUC ${d.val_auc}`;
+  document.getElementById('badge-acc').textContent   = `Val Acc ${d.val_acc}%`;
+  document.getElementById('badge-device').textContent= d.device.toUpperCase();
+  document.getElementById('arch-params').textContent = Number(d.params).toLocaleString();
+  document.getElementById('arch-device').textContent = d.device;
+}).catch(_=>{});
+
+/* ──────────────────────────────────────────────────────────
+   Drag & Drop / File input
+────────────────────────────────────────────────────────── */
+const dz    = document.getElementById('drop-zone');
+const finp  = document.getElementById('file-input');
+let selectedFile = null;
+
+dz.addEventListener('dragover', e=>{e.preventDefault();dz.classList.add('over')});
+dz.addEventListener('dragleave',()=>dz.classList.remove('over'));
+dz.addEventListener('drop', e=>{
+  e.preventDefault(); dz.classList.remove('over');
+  const f = e.dataTransfer.files[0];
+  if(f && f.type.startsWith('video/')) setFile(f);
+});
+finp.addEventListener('change',()=>{if(finp.files[0]) setFile(finp.files[0])});
+
+function setFile(f){
+  selectedFile = f;
+  dz.classList.add('has-file');
+  const fn = document.getElementById('file-name');
+  fn.textContent = f.name + ' (' + (f.size/1024/1024).toFixed(1)+' MB)';
+  fn.style.display='block';
+
+  const vid = document.getElementById('preview-video');
+  vid.src = URL.createObjectURL(f);
+
+  const pb = document.getElementById('preview-bar');
+  pb.style.display='flex';
+
+  // Reset any previous result
+  resetUI();
+}
+
+/* ──────────────────────────────────────────────────────────
+   Run prediction
+────────────────────────────────────────────────────────── */
+async function runPrediction(){
+  if(!selectedFile) return;
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true; btn.textContent='Processing…';
+  resetUI();
+
+  document.getElementById('pipeline-section').style.display='block';
+  document.getElementById('error-box').style.display='none';
+
+  // Animate stages in sequence while waiting for server
+  const stageDelay = [0, 300, 700, 1100, 1500];
+  stageDelay.forEach((d,i)=>setTimeout(()=>activateStage(i+1), d));
+
+  const fd = new FormData();
+  fd.append('video', selectedFile);
+
+  try {
+    const res = await fetch('/predict', {method:'POST', body:fd});
+    const data = await res.json();
+    if(data.error){ showError(data.error); btn.disabled=false; btn.textContent='▶ Run Screening'; return; }
+    renderResult(data);
+  } catch(e){
+    showError('Network error: '+e.message);
+  }
+  btn.disabled=false; btn.textContent='▶ Run Screening';
+}
+
+/* ──────────────────────────────────────────────────────────
+   Stage animation
+────────────────────────────────────────────────────────── */
+function activateStage(n){
+  for(let i=1;i<=5;i++){
+    if(i===n){
+      document.getElementById('s'+i).classList.add('active');
+    } else if(i<n){
+      document.getElementById('s'+i).classList.remove('active');
+      document.getElementById('s'+i).classList.add('done');
+      if(i<5) document.getElementById('a'+i).classList.add('active');
+    }
+  }
+}
+
+function markStageDone(n, ms_text){
+  const el = document.getElementById('s'+n);
+  el.classList.remove('active'); el.classList.add('done');
+  document.getElementById('t'+n).textContent = ms_text;
+  if(n<5) document.getElementById('a'+n).classList.add('active');
+}
+
+/* ──────────────────────────────────────────────────────────
+   Render everything from server response
+────────────────────────────────────────────────────────── */
+let cnnChart = null, attnChart = null;
+
+function renderResult(data){
+  const tm = data.timing;
+
+  // Finalise stage timings
+  markStageDone(1, `${tm.video_read_ms} ms`);
+  markStageDone(2, `${tm.frame_extract_ms} ms`);
+  markStageDone(3, `${tm.cnn_encode_ms} ms`);
+  markStageDone(4, `${tm.lstm_attn_ms} ms`);
+  markStageDone(5, `total ${tm.total_ms} ms`);
+
+  // Video meta
+  const sr = document.getElementById('stat-row');
+  const m  = data.video_meta;
+  sr.innerHTML = `
+    <div class="stat"><span>FPS</span>${m.fps}</div>
+    <div class="stat"><span>Res</span>${m.width}×${m.height}</div>
+    <div class="stat"><span>Dur</span>${m.duration}s</div>
+    <div class="stat"><span>Frames</span>${m.frames}</div>
+  `;
+  document.getElementById('total-frames').textContent = m.frames;
+
+  // ── Panels ──────────────────────────────────
+  setTimeout(()=>showPanel('panel-frames'),200);
+  setTimeout(()=>showPanel('panel-cnn'),500);
+  setTimeout(()=>showPanel('panel-attn'),800);
+  setTimeout(()=>showPanel('panel-arch'),1100);
+
+  // Frame thumbnails
+  const grid = document.getElementById('frame-grid');
+  grid.innerHTML='';
+  data.thumbs.forEach((b64,i)=>{
+    const isTop = data.top_frames.includes(i);
+    const w = data.frame_weights[i];
+    const div = document.createElement('div');
+    div.className='frame-thumb'+(isTop?' top':'');
+    div.title=`Frame ${i+1} — attention: ${w}%`;
+    div.innerHTML=`<img src="data:image/jpeg;base64,${b64}" loading="lazy">
+      <span class="frame-num">${i+1}</span>
+      <span class="weight-badge">${w}%</span>`;
+    grid.appendChild(div);
+  });
+
+  // CNN energy chart
+  setTimeout(()=>{
+    const labels = data.frame_energies.map((_,i)=>`F${i+1}`);
+    if(cnnChart) cnnChart.destroy();
+    cnnChart = new Chart(document.getElementById('cnn-chart'),{
+      type:'bar',
+      data:{
+        labels,
+        datasets:[{
+          label:'Feature Energy',
+          data: data.frame_energies,
+          backgroundColor: data.frame_energies.map((_,i)=>
+            data.top_frames.includes(i)?'rgba(251,191,36,.85)':'rgba(99,102,241,.6)'),
+          borderRadius:4,
+        }]
+      },
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{
+          x:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#64748b',font:{size:9}}},
+          y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#64748b',font:{size:9}}}
+        }
+      }
+    });
+  },600);
+
+  // Attention chart
+  setTimeout(()=>{
+    const labels = data.frame_weights.map((_,i)=>`F${i+1}`);
+    if(attnChart) attnChart.destroy();
+    attnChart = new Chart(document.getElementById('attn-chart'),{
+      type:'bar',
+      data:{
+        labels,
+        datasets:[{
+          label:'Attention Weight %',
+          data: data.frame_weights,
+          backgroundColor: data.frame_weights.map((_,i)=>
+            data.top_frames.includes(i)?'rgba(244,114,182,.85)':'rgba(34,211,238,.5)'),
+          borderRadius:4,
+        }]
+      },
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{
+          x:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#64748b',font:{size:9}}},
+          y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#64748b',font:{size:9}},
+             title:{display:true,text:'Weight %',color:'#64748b',font:{size:9}}}
+        }
+      }
+    });
+  },900);
+
+  // ── Final Result ─────────────────────────────
+  setTimeout(()=>{
+    const rs  = document.getElementById('result-section');
+    const rc  = document.getElementById('result-card');
+    rs.style.display='block';
+
+    const isASD = data.label==='ASD';
+    rc.className = 'result-card '+(isASD?'asd':'td');
+
+    // Label
+    const rl = document.getElementById('result-label');
+    rl.textContent = isASD ? 'ASD (Autism Spectrum Disorder)' : 'TD (Typically Developing)';
+    rl.className   = 'result-label '+(isASD?'asd':'td');
+    document.getElementById('result-sublabel').textContent =
+      isASD ? 'The model found behavioural patterns consistent with ASD.'
+            : 'The model found behavioural patterns consistent with typical development.';
+
+    // Confidence ring
+    const conf = data.confidence;
+    const ringFill = document.getElementById('ring-fill');
+    ringFill.style.stroke = isASD ? '#f87171' : '#10b981';
+    document.getElementById('ring-pct').textContent = conf.toFixed(1)+'%';
+    const offset = 283 - (283 * conf / 100);
+    setTimeout(()=>ringFill.style.strokeDashoffset=offset, 100);
+
+    // Bars
+    setTimeout(()=>{
+      document.getElementById('bar-asd').style.width = data.asd_prob+'%';
+      document.getElementById('bar-td').style.width  = data.td_prob+'%';
+      document.getElementById('pct-asd').textContent = data.asd_prob.toFixed(1)+'%';
+      document.getElementById('pct-td').textContent  = data.td_prob.toFixed(1)+'%';
+    }, 200);
+
+    // Why text
+    const topIdx = data.top_frames.map(i=>i+1).join(', ');
+    const maxW   = Math.max(...data.frame_weights);
+    const maxF   = data.frame_weights.indexOf(maxW)+1;
+    document.getElementById('why-text').textContent =
+      `The model assigned the highest attention weight (${maxW.toFixed(2)}%) to frame ${maxF}. `+
+      `The top 3 discriminative frames are: ${topIdx}. `+
+      (isASD
+        ? `Visual and motion patterns in these frames show characteristics the model associates with ASD behaviours — `+
+          `possibly restricted movement variation, repetitive postures, or atypical interaction patterns. `+
+          `ASD raw probability: ${data.asd_prob.toFixed(1)}%.`
+        : `The motion and visual patterns across these frames appear consistent with typical developmental behaviour. `+
+          `TD raw probability: ${data.td_prob.toFixed(1)}%.`);
+
+    // Timing row
+    const tr = document.getElementById('timing-row');
+    tr.innerHTML = `
+      <div class="timing-chip">Video read <span>${tm.video_read_ms} ms</span></div>
+      <div class="timing-chip">Frame extract <span>${tm.frame_extract_ms} ms</span></div>
+      <div class="timing-chip">CNN encode <span>${tm.cnn_encode_ms} ms</span></div>
+      <div class="timing-chip">BiLSTM+Attn <span>${tm.lstm_attn_ms} ms</span></div>
+      <div class="timing-chip">Total <span>${tm.total_ms} ms</span></div>
+    `;
+
+    // Scroll to result
+    setTimeout(()=>rs.scrollIntoView({behavior:'smooth',block:'start'}),300);
+  }, 1400);
+}
+
+/* ──────────────────────────────────────────────────────────
+   Helpers
+────────────────────────────────────────────────────────── */
+function showPanel(id){
+  document.getElementById(id).classList.add('visible');
+}
+
+function showError(msg){
+  const eb = document.getElementById('error-box');
+  eb.textContent = '⚠ '+msg;
+  eb.style.display='block';
+  // reset all stages
+  for(let i=1;i<=5;i++){
+    document.getElementById('s'+i).classList.remove('active','done');
+    if(i<5) document.getElementById('a'+i).classList.remove('active');
+  }
+}
+
+function resetUI(){
+  ['panel-frames','panel-cnn','panel-attn','panel-arch'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){el.classList.remove('visible')}
+  });
+  document.getElementById('result-section').style.display='none';
+  document.getElementById('frame-grid').innerHTML='';
+  for(let i=1;i<=5;i++){
+    document.getElementById('s'+i).classList.remove('active','done');
+    if(i<5) document.getElementById('a'+i).classList.remove('active');
+    document.getElementById('t'+i).textContent='';
+  }
+  if(cnnChart){cnnChart.destroy(); cnnChart=null;}
+  if(attnChart){attnChart.destroy(); attnChart=null;}
+}
+</script>
+</body>
+</html>
