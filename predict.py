@@ -1,16 +1,16 @@
-"""
-ASD Prediction — Full Inference Pipeline
+﻿"""
+ASD Prediction ΓÇö Full Inference Pipeline
 
 Accepts a raw MP4 video, extracts 2D pose keypoints via MediaPipe,
 runs them through the trained ASD classifier, and returns a detailed
 report including:
 
-  • Diagnosis       : ASD or TD (Typically Developing)
-  • Confidence      : 0–100% in the predicted class
-  • ASD Probability : raw model output
-  • Key Evidence    : top body joints and time windows that drove the decision
-  • Why-explanation : human-readable reasoning from attention + gradient maps
-  • Optional plots  : per-joint and per-frame attention heatmaps
+  ΓÇó Diagnosis       : ASD or TD (Typically Developing)
+  ΓÇó Confidence      : 0ΓÇô100% in the predicted class
+  ΓÇó ASD Probability : raw model output
+  ΓÇó Key Evidence    : top body joints and time windows that drove the decision
+  ΓÇó Why-explanation : human-readable reasoning from attention + gradient maps
+  ΓÇó Optional plots  : per-joint and per-frame attention heatmaps
 
 Usage:
     python predict.py path/to/video.mp4
@@ -36,13 +36,13 @@ from config import (
 from model           import ASDClassifier
 from pose_extractor  import extract_skeleton_from_video
 
-# ── Video-model imports (optional — only loaded when needed) ─────────────────
+# ΓöÇΓöÇ Video-model imports (optional ΓÇö only loaded when needed) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 VIDEO_MODEL_PATH = os.path.join(os.path.dirname(__file__), "checkpoints", "video_model_best.pth")
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 # ASD behavioral markers recorded in literature  (used for text explanation)
-# ──────────────────────────────────────────────────────────────────────────────
+# ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 _ASD_JOINT_INTERPRETATION = {
     "L_Wrist":     "repetitive or stereotyped hand/wrist movements",
     "R_Wrist":     "repetitive or stereotyped hand/wrist movements",
@@ -83,9 +83,9 @@ _TD_JOINT_INTERPRETATION = {
 }
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 # Load model
-# ──────────────────────────────────────────────────────────────────────────────
+# ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 def load_model(checkpoint_path: str = BEST_MODEL_PATH) -> ASDClassifier:
     if not os.path.exists(checkpoint_path):
@@ -105,9 +105,9 @@ def load_model(checkpoint_path: str = BEST_MODEL_PATH) -> ASDClassifier:
     return model
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 # Gradient-based joint importance (Grad-CAM variant)
-# ──────────────────────────────────────────────────────────────────────────────
+# ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 def gradcam_joint_importance(
     model: ASDClassifier,
@@ -117,7 +117,7 @@ def gradcam_joint_importance(
     Compute per-joint importance via gradient of the ASD logit w.r.t. input.
 
     Returns:
-        importance (24,) — normalised 0→1 per joint
+        importance (24,) ΓÇö normalised 0ΓåÆ1 per joint
     """
     x = x.clone().requires_grad_(True).to(DEVICE)
     out   = model(x)
@@ -131,9 +131,9 @@ def gradcam_joint_importance(
     return importance
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 # Temporal attention statistics
-# ──────────────────────────────────────────────────────────────────────────────
+# ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 def _describe_temporal_pattern(t_attn: np.ndarray) -> str:
     """
@@ -166,7 +166,7 @@ def _predict_video_cnn(
     plot_path  : str | None = None,
 ) -> dict:
     """
-    CNN-LSTM inference path — used when MediaPipe pose extraction fails
+    CNN-LSTM inference path ΓÇö used when MediaPipe pose extraction fails
     (e.g., low-resolution or toddler-video inputs).
     Requires checkpoints/video_model_best.pth to exist.
     """
@@ -179,12 +179,22 @@ def _predict_video_cnn(
             "Train it first:  python train_video.py"
         )
 
-    # Load model — read n_frames/img_size from saved training args
+    # Load model ΓÇö read n_frames/img_size from saved training args
     ck     = torch.load(VIDEO_MODEL_PATH, map_location="cpu", weights_only=False)
     saved_args = ck.get("args", {})
+    calibration = ck.get("calibration", {})
+    threshold   = float(calibration.get("threshold", 0.5))
+    temperature = float(calibration.get("temperature", 1.0))
     n_frames = saved_args.get("n_frames", n_frames)
     img_size = saved_args.get("img_size", img_size)
-    vmodel = VideoASDClassifier(pretrained=False)
+    vmodel = VideoASDClassifier(
+        frame_dim=saved_args.get("frame_dim", 256),
+        backbone_name=saved_args.get("backbone", "mobilenetv3_small_100"),
+        tr_layers=saved_args.get("tr_layers", 2),
+        tr_heads=saved_args.get("tr_heads", 4),
+        tr_ff_mult=saved_args.get("tr_ff_mult", 4),
+        pretrained=False,
+    )
     vmodel.load_state_dict(ck["model_state"])
     vmodel.eval().to(DEVICE)
     print(f"        Video model loaded  (epoch={ck.get('epoch','?')}, "
@@ -197,15 +207,14 @@ def _predict_video_cnn(
     vid_t    = tfm(frames).unsqueeze(0).to(DEVICE)   # (1, T, 3, H, W)
 
     with torch.no_grad():
-        res = vmodel.predict(vid_t)
+        logit, frame_wts_t = vmodel(vid_t)
+    asd_prob = torch.sigmoid(logit / max(temperature, 0.05)).item()
+    label_idx = int(asd_prob >= threshold)
+    confidence = asd_prob if label_idx == 1 else 1.0 - asd_prob
+    frame_wts = frame_wts_t.squeeze(0).cpu().tolist()
 
-    asd_prob   = res["prob"]
-    label_idx  = res["label"]
-    confidence = res["confidence"]
-    frame_wts  = res["frame_weights"]
-
-    # Top-3 frame positions → convert to rough time descriptions
-    top_frames = res["top_frames"]
+    # Top-3 frame positions ΓåÆ convert to rough time descriptions
+    top_frames = sorted(range(len(frame_wts)), key=lambda i: frame_wts[i], reverse=True)[:3]
     T          = len(frame_wts)
     frame_desc = []
     for fi in top_frames:
@@ -252,9 +261,9 @@ def _predict_video_cnn(
     return result
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 # Main prediction function
-# ──────────────────────────────────────────────────────────────────────────────
+# ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 def predict_video(
     video_path: str,
@@ -264,7 +273,7 @@ def predict_video(
     plot_path: str | None = None,
 ) -> dict:
     """
-    Full inference pipeline: video → ASD/TD classification + explanation.
+    Full inference pipeline: video ΓåÆ ASD/TD classification + explanation.
 
     Args:
         video_path:      Path to the raw .mp4 file.
@@ -275,74 +284,74 @@ def predict_video(
 
     Returns:
         result dict with keys:
-          prediction    : str  — "ASD" or "TD"
-          asd_prob      : float — 0.0–1.0
-          confidence    : float — 0.0–1.0 (probability of predicted class)
-          top_joints    : list[str] — 5 most attended joints
-          joint_importance : dict  — {joint_name: importance_score}
-          temporal_pattern : str  — text description of temporal focus
-          explanation   : str  — full natural-language reasoning
+          prediction    : str  ΓÇö "ASD" or "TD"
+          asd_prob      : float ΓÇö 0.0ΓÇô1.0
+          confidence    : float ΓÇö 0.0ΓÇô1.0 (probability of predicted class)
+          top_joints    : list[str] ΓÇö 5 most attended joints
+          joint_importance : dict  ΓÇö {joint_name: importance_score}
+          temporal_pattern : str  ΓÇö text description of temporal focus
+          explanation   : str  ΓÇö full natural-language reasoning
           frames_extracted : int
     """
-    print(f"\n{'─'*60}")
-    print(f"  📹  Analysing: {os.path.basename(video_path)}")
-    print(f"{'─'*60}")
+    print(f"\n{'ΓöÇ'*60}")
+    print(f"  ≡ƒô╣  Analysing: {os.path.basename(video_path)}")
+    print(f"{'ΓöÇ'*60}")
 
-    # Always use the CNN-LSTM video model — it achieves AUC=0.9991 vs
+    # Always use the CNN-LSTM video model ΓÇö it achieves AUC=0.9991 vs
     # the skeleton model's AUC=0.5883 (MediaPipe fails on toddler videos).
     return _predict_video_cnn(video_path, save_plot=save_plot, plot_path=plot_path)
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 # Console report
-# ──────────────────────────────────────────────────────────────────────────────
+# ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 def _print_report(result: dict):
     label = result["prediction"]
     conf  = result["confidence"] * 100
     asd_p = result["asd_prob"]   * 100
 
-    bar_asd = "█" * int(asd_p / 5) + "░" * (20 - int(asd_p / 5))
-    bar_td  = "█" * int((100 - asd_p) / 5) + "░" * (20 - int((100 - asd_p) / 5))
+    bar_asd = "Γûê" * int(asd_p / 5) + "Γûæ" * (20 - int(asd_p / 5))
+    bar_td  = "Γûê" * int((100 - asd_p) / 5) + "Γûæ" * (20 - int((100 - asd_p) / 5))
 
     print(f"""
-╔══════════════════════════════════════════════════════╗
-║          ASD SCREENING RESULT                        ║
-╠══════════════════════════════════════════════════════╣
-║  Diagnosis  :  {label:<36s}║
-║  Confidence :  {conf:.1f}%                                   ║
-╠══════════════════════════════════════════════════════╣
-║  ASD  [{bar_asd}]  {asd_p:5.1f}%  ║
-║  TD   [{bar_td}]  {100-asd_p:5.1f}%  ║
-╠══════════════════════════════════════════════════════╣
-║  Top 5 contributing joints:                          ║""")
+ΓòöΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòù
+Γòæ          ASD SCREENING RESULT                        Γòæ
+ΓòáΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòú
+Γòæ  Diagnosis  :  {label:<36s}Γòæ
+Γòæ  Confidence :  {conf:.1f}%                                   Γòæ
+ΓòáΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòú
+Γòæ  ASD  [{bar_asd}]  {asd_p:5.1f}%  Γòæ
+Γòæ  TD   [{bar_td}]  {100-asd_p:5.1f}%  Γòæ
+ΓòáΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòú
+Γòæ  Top 5 contributing joints:                          Γòæ""")
     if result["top_joints"]:
         for i, j in enumerate(result["top_joints"], 1):
             score = result["joint_importance"].get(j, 0) * 100
-            print(f"║    {i}. {j:<20s}  importance: {score:5.1f}%       ║")
+            print(f"Γòæ    {i}. {j:<20s}  importance: {score:5.1f}%       Γòæ")
     else:
-        print(f"║    (CNN video model — frame-level analysis)          ║")
-    print(f"""╠══════════════════════════════════════════════════════╣
-║  Temporal focus:                                     ║""")
+        print(f"Γòæ    (CNN video model ΓÇö frame-level analysis)          Γòæ")
+    print(f"""ΓòáΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòú
+Γòæ  Temporal focus:                                     Γòæ""")
     # Word-wrap temporal pattern
     words = result["temporal_pattern"].split()
-    line  = "║  "
+    line  = "Γòæ  "
     for w in words:
         if len(line) + len(w) + 1 > 54:
-            print(f"{line:<55s}║")
-            line = "║  " + w + " "
+            print(f"{line:<55s}Γòæ")
+            line = "Γòæ  " + w + " "
         else:
             line += w + " "
-    if line.strip() != "║":
-        print(f"{line:<55s}║")
-    print("╚══════════════════════════════════════════════════════╝")
+    if line.strip() != "Γòæ":
+        print(f"{line:<55s}Γòæ")
+    print("ΓòÜΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓò¥")
     print("\n  EXPLANATION:")
     print("  " + result["explanation"].replace("\n", "\n  "))
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 # Explanation figure
-# ──────────────────────────────────────────────────────────────────────────────
+# ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 def _save_explanation_plot(
     result:    dict,
@@ -359,11 +368,11 @@ def _save_explanation_plot(
     conf       = result["confidence"] * 100
     colour     = "#e74c3c" if "ASD" in label else "#2ecc71"
     fig.suptitle(
-        f"ASD Screening — {label}  (Confidence: {conf:.1f}%)",
+        f"ASD Screening ΓÇö {label}  (Confidence: {conf:.1f}%)",
         fontsize=15, fontweight="bold", color=colour
     )
 
-    # ── 1) Joint attention heatmap ──────────────────────────────────────────
+    # ΓöÇΓöÇ 1) Joint attention heatmap ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
     ax = axes[0]
     sorted_idx = np.argsort(j_attn)[::-1]
     vals       = j_attn[sorted_idx]
@@ -375,7 +384,7 @@ def _save_explanation_plot(
     ax.set_title("Joint Attention")
     ax.axvline(0.5, color="grey", linestyle="--", linewidth=0.8)
 
-    # ── 2) Gradient importance ──────────────────────────────────────────────
+    # ΓöÇΓöÇ 2) Gradient importance ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
     ax = axes[1]
     sorted_idx2 = np.argsort(grad_imp)[::-1]
     vals2       = grad_imp[sorted_idx2]
@@ -385,7 +394,7 @@ def _save_explanation_plot(
     ax.set_xlabel("Gradient importance")
     ax.set_title("Gradient-based Importance")
 
-    # ── 3) Temporal attention ───────────────────────────────────────────────
+    # ΓöÇΓöÇ 3) Temporal attention ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
     ax = axes[2]
     T  = len(t_attn)
     ax.fill_between(range(T), t_attn, alpha=0.6, color=colour)
@@ -398,12 +407,12 @@ def _save_explanation_plot(
     plt.tight_layout()
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"\n  Saved explanation plot → {out_path}")
+    print(f"\n  Saved explanation plot ΓåÆ {out_path}")
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 # Entry point
-# ──────────────────────────────────────────────────────────────────────────────
+# ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 def main():
     parser = argparse.ArgumentParser(

@@ -1,5 +1,5 @@
-"""
-Batch Pose Extraction — autism_data_anonymized → NPZ cache
+﻿"""
+Batch Pose Extraction ΓÇö autism_data_anonymized ΓåÆ NPZ cache
 
 Processes all .mp4 videos in autism_data_anonymized/{training_set,testing_set}/
 {ASD,TD}/ using MediaPipe Pose, maps to SMPL-24 joints and saves one compressed
@@ -23,7 +23,7 @@ Output structure:
             TD/   <video_stem>.npz
 
 Each .npz contains:
-    skeleton : float32 array of shape (2, MAX_FRAMES, 24)  — (C, T, V)
+    skeleton : float32 array of shape (2, MAX_FRAMES, 24)  ΓÇö (C, T, V)
 """
 
 import os
@@ -41,7 +41,7 @@ from config import AUTISM_DATA_ROOT, POSE_CACHE_DIR, MAX_FRAMES
 from pose_extractor import extract_skeleton_from_video
 
 
-# ─── Worker function (runs in a subprocess) ───────────────────────────────────
+# ΓöÇΓöÇΓöÇ Worker function (runs in a subprocess) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 def _worker(args):
     video_path, out_path, overwrite = args
@@ -56,7 +56,7 @@ def _worker(args):
         return "error", f"{video_path}: {e}"
 
 
-# ─── Main ─────────────────────────────────────────────────────────────────────
+# ΓöÇΓöÇΓöÇ Main ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 def main():
     parser = argparse.ArgumentParser(description="Extract MediaPipe poses from videos")
@@ -69,7 +69,7 @@ def main():
     args = parser.parse_args()
 
     print("=" * 60)
-    print("  MediaPipe Pose Extraction — autism_data_anonymized")
+    print("  MediaPipe Pose Extraction ΓÇö autism_data_anonymized")
     print(f"  Source: {AUTISM_DATA_ROOT}")
     print(f"  Cache:  {POSE_CACHE_DIR}")
     print(f"  Workers: {args.workers}  |  Limit: {args.limit}")
@@ -100,7 +100,7 @@ def main():
                 for v in videos
             ]
 
-            print(f"\n  {split}/{class_name}: {len(tasks)} videos …")
+            print(f"\n  {split}/{class_name}: {len(tasks)} videos ΓÇª")
 
             with Pool(processes=args.workers) as pool:
                 # Process in chunks and report progress
