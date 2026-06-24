@@ -16,8 +16,10 @@ import torch
 import cv2
 from PIL import Image
 from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask_cors import CORS
+from werkzeug.utils import secure_filename
 
-from video_model   import VideoASDClassifier
+from video_model   import model_factory
 from video_dataset import VideoTransform, _sample_frames as _ds_sample_frames
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -32,6 +34,7 @@ app = Flask(
     template_folder=os.path.join(os.path.dirname(__file__), "templates"),
     static_folder  =os.path.join(os.path.dirname(__file__), "static"),
 )
+CORS(app)
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024   # 200 MB upload limit
 
 # ── Load model once at startup ────────────────────────────────────────────────
@@ -53,8 +56,17 @@ def get_model():
         "val_auc": round(float(ck.get("val_auc", 0)), 4),
         "val_acc": round(float(ck.get("val_acc", 0)) * 100, 2),
     }
-    _model = VideoASDClassifier()
-    _model.load_state_dict(ck["model_state"])
+    # Auto-detect backbone from checkpoint
+    state_dict = ck.get("model_state") or ck.get("model_state_dict")
+    proj_weight = state_dict.get("encoder.proj.0.weight")
+    if proj_weight is not None and proj_weight.shape[1] == 576:
+        backbone = "mobilenet"  # Legacy MobileNetV3 checkpoint
+    else:
+        backbone = "efficientnet"  # EfficientNetV2-S checkpoint
+    _model = model_factory("option_a", backbone=backbone)
+    if state_dict is None:
+        raise KeyError("Checkpoint missing model_state/model_state_dict")
+    _model.load_state_dict(state_dict)
     _model = _model.to(DEVICE).eval()
     print(f"[MAVEN] Model loaded — epoch={_ck_meta['epoch']}, "
           f"AUC={_ck_meta['val_auc']}, Acc={_ck_meta['val_acc']}%  [{DEVICE}]")
@@ -97,9 +109,10 @@ def _sample_frames(video_path: str, n: int, size: int):
 
     return video_tensor, thumb_list, raw_frames
 
-
 def _video_meta(video_path: str) -> dict:
     cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return {"fps": 0, "frames": 0, "width": 0, "height": 0, "duration": 0, "error": "Could not open video"}
     fps    = cap.get(cv2.CAP_PROP_FPS) or 25
     total  = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     w      = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -112,19 +125,34 @@ def _video_meta(video_path: str) -> dict:
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 @app.route("/")
-def index():
-    model = get_model()
-    return render_template("index.html", meta=_ck_meta, device=str(DEVICE))
+def home():
+    return render_template("home.html")
 
+@app.route("/model")
+def model_page():
+    # Attempt to load the model on startup/first-visit if not loaded
+    try:
+        get_model()
+    except Exception:
+        pass
+    return render_template("index.html")
+
+
+ALLOWED_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 
 @app.route("/predict", methods=["POST"])
+@app.route("/api/predict", methods=["POST"])
 def predict():
     t_start = time.perf_counter()
     if "video" not in request.files:
         return jsonify({"error": "No video file in request"}), 400
 
     f   = request.files["video"]
-    ext = os.path.splitext(f.filename)[1] or ".mp4"
+    ext = os.path.splitext(secure_filename(f.filename))[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        return jsonify({"error": f"Unsupported file type: {ext}. Use MP4, AVI, MOV, MKV, or WebM."}), 400
+    if not ext:
+        ext = ".mp4"
     tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
     tmp_path = tmp.name
     tmp.close()
@@ -143,18 +171,12 @@ def predict():
         video_tensor, thumbs, _ = _sample_frames(tmp_path, N_FRAMES, IMG_SIZE)
         t2_ms = round((time.perf_counter() - t2) * 1000, 1)
 
-        # Stage 3 — CNN encoding (forward pass up to LSTM)
+        # Stage 3+4 — Full model inference (CNN + Transformer + Attention + Classifier)
         t3 = time.perf_counter()
         video_tensor = video_tensor.to(DEVICE)
-        with torch.no_grad():
-            frame_feats = model.encode_frames(video_tensor)   # (1, T, 256)
-        frame_feats_norm = frame_feats.squeeze(0).norm(dim=-1).cpu().tolist()  # (T,)
-        t3_ms = round((time.perf_counter() - t3) * 1000, 1)
-
-        # Stage 4 — LSTM + Attention + Classifier
-        t4 = time.perf_counter()
         result = model.predict(video_tensor)
-        t4_ms = round((time.perf_counter() - t4) * 1000, 1)
+        t3_ms = round((time.perf_counter() - t3) * 1000, 1)
+        t4_ms = 0.0  # included in t3_ms (single pass)
 
         total_ms = round((time.perf_counter() - t_start) * 1000, 1)
 
@@ -166,7 +188,7 @@ def predict():
             "confidence"   : round(result["confidence"] * 100, 2),
             "top_frames"   : result["top_frames"],
             "frame_weights": [round(w * 100, 2) for w in result["frame_weights"]],
-            "frame_energies": [round(e, 3) for e in frame_feats_norm],
+            "frame_energies": [round(e, 3) for e in result["frame_energies"]],
             "thumbs"       : thumbs,
             "video_meta"   : meta,
             "checkpoint"   : _ck_meta,
@@ -174,7 +196,8 @@ def predict():
                 "video_read_ms"    : t1_ms,
                 "frame_extract_ms" : t2_ms,
                 "cnn_encode_ms"    : t3_ms,
-                "lstm_attn_ms"     : t4_ms,
+                "transformer_attn_ms": t4_ms,
+                "lstm_attn_ms"       : t4_ms,
                 "total_ms"         : total_ms,
             }
         })
@@ -191,23 +214,24 @@ def predict():
 
 # ── Model info endpoint ────────────────────────────────────────────────────────
 @app.route("/model_info")
+@app.route("/api/model_info")
 def model_info():
-    model = get_model()
-    total = sum(p.numel() for p in model.parameters())
-    return jsonify({
-        "params"  : total,
-        "n_frames": N_FRAMES,
-        "img_size": IMG_SIZE,
-        "device"  : str(DEVICE),
-        **_ck_meta
-    })
+    try:
+        model = get_model()
+        total = sum(p.numel() for p in model.parameters())
+        return jsonify({"params": total, "n_frames": N_FRAMES, "img_size": IMG_SIZE, "device": str(DEVICE), **_ck_meta})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
     print("=" * 60)
     print("  MAVEN — ASD Screening Frontend")
     print("  Loading model ...")
-    get_model()
+    try:
+        get_model()
+    except Exception as e:
+        print(f"  Model not loaded at startup: {e}")
     print(f"  Open: http://127.0.0.1:5000")
-    print("=" * 60)
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    print("Starting MAVEN screening server...")
+    app.run(host="127.0.0.1", port=5000, debug=True)

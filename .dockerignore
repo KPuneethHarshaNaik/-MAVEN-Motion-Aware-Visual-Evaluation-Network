@@ -1,0 +1,9 @@
+__pycache__/
+.git/
+venv/
+venv_cuda/
+.env
+frame_cache/
+*.pyc
+*.pyo
+.DS_Store

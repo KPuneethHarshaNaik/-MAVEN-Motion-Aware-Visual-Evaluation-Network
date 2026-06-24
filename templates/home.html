@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MAVEN — Motion-Aware Visual Evaluation Network</title>
+  <meta name="description" content="MAVEN — A deep learning pipeline that reads motion patterns in video to assist ASD screening. 96% accuracy.">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='4' fill='%23050508'/><text x='50%25' y='58%25' dominant-baseline='middle' text-anchor='middle' fill='%234FFFD4' font-size='16' font-weight='bold' font-family='system-ui'>◈</text></svg>">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="/static/maven.css">
+</head>
+<body>
+
+  <!-- ══════ NAV ══════ -->
+  <nav class="nav" role="navigation" aria-label="Main navigation">
+    <div class="container">
+      <a href="/" class="nav-logo"><span class="glyph">◈</span> MAVEN</a>
+      <ul class="nav-links">
+        <li><a href="#demo">Demo</a></li>
+        <li><a href="#pipeline">How It Works</a></li>
+        <li><a href="#architecture">Architecture</a></li>
+        <li><a href="#team">Team</a></li>
+        <li><a href="/model">Try Model <span class="arrow">↗</span></a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- ══════ HERO ══════ -->
+  <section class="hero" id="hero">
+    <div class="hero-bg" aria-hidden="true"></div>
+    <div class="hero-glow" aria-hidden="true"></div>
+
+    <div class="hero-content">
+      <p class="hero-label fade-up delay-0">Motion-Aware Visual Evaluation Network</p>
+
+      <h1 class="hero-heading">
+        <span class="text-animate-blur" data-base-delay="0.1">Detecting Autism,</span><br>
+        <span class="text-animate-blur accent-line" data-base-delay="0.6">Frame by Frame.</span>
+      </h1>
+
+      <p class="hero-sub fade-up delay-3">
+        A deep learning pipeline that reads motion patterns
+        in video to assist early ASD screening. 96% accuracy.
+      </p>
+
+      <div class="hero-ctas fade-up delay-4">
+        <a href="/model" class="btn btn-primary">Try the Model</a>
+        <a href="https://github.com" target="_blank" rel="noopener" class="btn btn-secondary">GitHub <span class="arrow">↗</span></a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════ STATS RIBBON ══════ -->
+  <div class="stats-ribbon">
+    <div class="container">
+      <div class="stat-block">
+        <div class="stat-number" data-counter data-target="96" data-decimals="0" data-suffix="%">0%</div>
+        <div class="stat-label">Accuracy</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-number" data-counter data-target="0.9953" data-decimals="4">0.0000</div>
+        <div class="stat-label">AUC-ROC</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-number" style="color: var(--color-text-primary); font-size: var(--text-lg);">MobileNetV3 + Transformer</div>
+        <div class="stat-label">Architecture</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════ VIDEO SECTION ══════ -->
+  <section class="video-section section" id="demo">
+    <div class="container">
+      <div class="section-header fade-up">
+        <p class="section-label">Demo</p>
+        <h2 class="section-title">See MAVEN in Action</h2>
+      </div>
+
+      <div class="video-wrapper fade-up">
+        <div class="video-chrome">
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="title"><span class="glyph">◈</span> MAVEN — Inference Demo v1.0</span>
+        </div>
+        <div class="video-body">
+          <video class="demo-video" preload="none" muted playsinline loop>
+            <source src="/static/demo.mp4" type="video/mp4">
+          </video>
+          <div class="video-poster">
+            <button class="play-btn" aria-label="Play demo video">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#4FFFD4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="5 3 19 12 5 21 5 3" fill="#4FFFD4" stroke="none"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <p style="text-align:center; margin-top: var(--space-24); font-size: var(--text-sm); color: var(--color-text-ghost);">
+        Upload a video on the <a href="/model" style="color: var(--color-accent-dim);">Model page</a> to run your own inference.
+      </p>
+    </div>
+  </section>
+
+  <div class="divider-glow"></div>
+
+  <!-- ══════ HOW IT WORKS ══════ -->
+  <section class="pipeline-section section" id="pipeline">
+    <div class="container">
+      <div class="section-header fade-up">
+        <p class="section-label">Pipeline</p>
+        <h2 class="section-title">How It Works</h2>
+        <p class="section-desc mx-auto">From raw video footage to clinical-grade prediction in four stages.</p>
+      </div>
+
+      <div class="pipeline fade-up">
+        <!-- Node 1 -->
+        <div class="pipeline-node">
+          <div class="pipeline-node-icon">▶</div>
+          <div class="pipeline-node-title">Input Video</div>
+          <div class="pipeline-node-desc">Raw footage of a child in a natural environment. 16 key frames are sampled.</div>
+        </div>
+
+        <!-- Arrow -->
+        <div class="pipeline-arrow">
+          <svg width="48" height="24" viewBox="0 0 48 24">
+            <line x1="0" y1="12" x2="36" y2="12" class="pipeline-arrow-line"/>
+            <polygon points="36,6 48,12 36,18" class="pipeline-arrow-head"/>
+          </svg>
+        </div>
+
+        <!-- Node 2 -->
+        <div class="pipeline-node">
+          <div class="pipeline-node-icon">⊞</div>
+          <div class="pipeline-node-title">MobileNetV3-Small</div>
+          <div class="pipeline-node-desc">Extracts spatial features from each frame — body pose, gaze, and motion cues.</div>
+        </div>
+
+        <!-- Arrow -->
+        <div class="pipeline-arrow">
+          <svg width="48" height="24" viewBox="0 0 48 24">
+            <line x1="0" y1="12" x2="36" y2="12" class="pipeline-arrow-line"/>
+            <polygon points="36,6 48,12 36,18" class="pipeline-arrow-head"/>
+          </svg>
+        </div>
+
+        <!-- Node 3 -->
+        <div class="pipeline-node">
+          <div class="pipeline-node-icon">◇</div>
+          <div class="pipeline-node-title">Transformer Encoder</div>
+          <div class="pipeline-node-desc">Models temporal dependencies across all 16 frames using multi-head self-attention.</div>
+        </div>
+
+        <!-- Arrow -->
+        <div class="pipeline-arrow">
+          <svg width="48" height="24" viewBox="0 0 48 24">
+            <line x1="0" y1="12" x2="36" y2="12" class="pipeline-arrow-line"/>
+            <polygon points="36,6 48,12 36,18" class="pipeline-arrow-head"/>
+          </svg>
+        </div>
+
+        <!-- Node 4 -->
+        <div class="pipeline-node">
+          <div class="pipeline-node-icon">◎</div>
+          <div class="pipeline-node-title">MLP Output</div>
+          <div class="pipeline-node-desc">Binary classification head outputs ASD or Non-ASD with calibrated confidence.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider-glow"></div>
+
+  <!-- ══════ ARCHITECTURE ══════ -->
+  <section class="arch-section section" id="architecture">
+    <div class="container">
+      <div class="section-header fade-up">
+        <p class="section-label">Model</p>
+        <h2 class="section-title">Architecture</h2>
+      </div>
+
+      <div class="arch-card fade-up">
+        <div class="arch-card-header"><span class="glyph">◈</span> MAVEN Model Specification</div>
+        <div class="arch-row">
+          <span class="arch-key">Feature Extractor</span>
+          <span class="arch-val">MobileNetV3-Small</span>
+        </div>
+        <div class="arch-row">
+          <span class="arch-key">Temporal Modeling</span>
+          <span class="arch-val">Transformer Encoder</span>
+        </div>
+        <div class="arch-row">
+          <span class="arch-key">Classification</span>
+          <span class="arch-val">MLP (2-class)</span>
+        </div>
+        <div class="arch-row">
+          <span class="arch-key">Training Accuracy</span>
+          <span class="arch-val accent">96.00%</span>
+        </div>
+        <div class="arch-row">
+          <span class="arch-key">AUC-ROC</span>
+          <span class="arch-val accent">0.9953</span>
+        </div>
+        <div class="arch-row">
+          <span class="arch-key">Framework</span>
+          <span class="arch-val">PyTorch</span>
+        </div>
+        <div class="arch-row">
+          <span class="arch-key">Input</span>
+          <span class="arch-val">16 frames × 96×96 RGB</span>
+        </div>
+        <div class="arch-row">
+          <span class="arch-key">Parameters</span>
+          <span class="arch-val">~2.8M</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider-glow"></div>
+
+  <!-- ══════ TEAM ══════ -->
+  <section class="team-section section" id="team">
+    <div class="container">
+      <div class="section-header fade-up">
+        <p class="section-label">Built By</p>
+        <h2 class="section-title">The Team Behind MAVEN</h2>
+      </div>
+
+      <!-- Row 1: 3 members -->
+      <div class="team-grid fade-up">
+        <div class="team-card">
+          <div class="team-avatar">P</div>
+          <div class="team-name">Puneeth</div>
+          <div class="team-role">Lead Developer</div>
+        </div>
+        <div class="team-card">
+          <div class="team-avatar">A</div>
+          <div class="team-name">Team Member 2</div>
+          <div class="team-role">ML Engineer</div>
+        </div>
+        <div class="team-card">
+          <div class="team-avatar">B</div>
+          <div class="team-name">Team Member 3</div>
+          <div class="team-role">Data Engineer</div>
+        </div>
+      </div>
+
+      <!-- Row 2: 2 members -->
+      <div class="team-grid row-2 fade-up">
+        <div class="team-card">
+          <div class="team-avatar">C</div>
+          <div class="team-name">Team Member 4</div>
+          <div class="team-role">Researcher</div>
+        </div>
+        <div class="team-card">
+          <div class="team-avatar">D</div>
+          <div class="team-name">Team Member 5</div>
+          <div class="team-role">Researcher</div>
+        </div>
+      </div>
+
+      <!-- Mentor -->
+      <div class="mentor-card fade-up">
+        <div class="team-avatar">S</div>
+        <div class="mentor-info">
+          <div class="mentor-label">Mentor</div>
+          <div class="team-name">Dr. Shilpa</div>
+          <div class="team-role">Faculty Advisor</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════ FOOTER ══════ -->
+  <footer class="footer">
+    <div class="container">
+      <span class="glyph">◈</span>
+      <span>MAVEN 2025</span>
+      <span class="sep">·</span>
+      <span>Motion-Aware Visual Evaluation Network</span>
+      <span class="sep">·</span>
+      <a href="https://github.com" target="_blank" rel="noopener">GitHub ↗</a>
+      <span class="sep">·</span>
+      <a href="#">Research Paper ↗</a>
+    </div>
+  </footer>
+
+  <!-- Scripts -->
+  <script src="/static/maven.js"></script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 """
 train_video.py
 ==============
-Trains the VideoASDClassifier (MobileNetV3 + BiLSTM) on raw MP4 frames
+Trains the VideoASDClassifier (EfficientNetV2-S + Temporal Transformer) on raw MP4 frames
 from autism_data_anonymized.
 
 Usage:
@@ -27,11 +27,12 @@ import numpy as np
 
 # ── project imports ──────────────────────────────────────────────────────────
 sys.path.insert(0, str(Path(__file__).parent))
-from video_model   import VideoASDClassifier
+from video_model   import model_factory
 from video_dataset import build_video_loaders
 
 CHECKPOINT_DIR = Path(__file__).parent / "checkpoints"
 BEST_MODEL     = CHECKPOINT_DIR / "video_model_best.pth"
+LATEST_MODEL   = CHECKPOINT_DIR / "video_model_latest.pth"
 HISTORY_FILE   = CHECKPOINT_DIR / "video_history.json"
 
 CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
@@ -50,6 +51,14 @@ def parse_args():
                    help="max videos per class in training set (None=all)")
     p.add_argument("--resume",     action="store_true",
                    help="resume training from best checkpoint")
+    p.add_argument("--model",      type=str, default="option_a",
+                   help="model preset (option_a)")
+    p.add_argument("--freeze_backbone", action="store_true",
+                   help="freeze frame encoder for transfer learning")
+    p.add_argument("--label_smoothing", type=float, default=0.1,
+                   help="label smoothing factor (0.0 to 1.0)")
+    p.add_argument("--data_root", type=str, default=None,
+                   help="path to autism_data_anonymized dataset folder")
     return p.parse_args()
 
 
@@ -77,7 +86,7 @@ def evaluate(model, loader, device, criterion):
     for videos, labels in loader:
         videos = videos.to(device, non_blocking=True)
         labels = labels.float().to(device)
-        with autocast("cuda"):
+        with autocast(device_type=str(device).split(":")[0]):
             logit, _ = model(videos)
             loss = criterion(logit.squeeze(1), labels)
         total_loss += loss.item() * labels.size(0)
@@ -100,44 +109,35 @@ def train(args):
     print(f"{'='*60}\n")
 
     # ── Data ──────────────────────────────────────────────────
+    kwargs = {}
+    if args.data_root:
+        from pathlib import Path
+        kwargs["data_root"] = Path(args.data_root)
+
     train_loader, val_loader, test_loader = build_video_loaders(
         n_frames    = args.n_frames,
         img_size    = args.img_size,
         batch_size  = args.batch_size,
         num_workers = args.workers,
+        train_limit = args.limit,
+        **kwargs
     )
 
     # ── Model ─────────────────────────────────────────────────
-    model = VideoASDClassifier(
-        frame_dim   = 256,
-        lstm_hidden = 256,
-        lstm_layers = 2,
-        dropout     = 0.4,
-        pretrained  = True,
+    model = model_factory(
+        name                = args.model,
+        frame_dim           = 256,
+        transformer_depth   = 4,
+        n_heads             = 8,
+        ff_mult             = 4,
+        dropout             = 0.4,
+        pretrained          = True,
     ).to(device)
-
-    start_epoch = 1
-    best_auc    = 0.0
-    best_epoch  = 0
-    history     = []
-
-    # ── Optional resume ────────────────────────────────────────
-    if args.resume and BEST_MODEL.exists():
-        ck = torch.load(BEST_MODEL, weights_only=False)
-        model.load_state_dict(ck["model_state"])
-        best_auc    = ck.get("val_auc", 0.0)
-        best_epoch  = ck.get("epoch", 0)
-        start_epoch = best_epoch + 1
-        # Halve the LR for fine-tuning continuation
-        args.lr = args.lr * 0.3
-        # Load history if present
-        if HISTORY_FILE.exists():
-            import json as _json
-            saved = _json.load(open(HISTORY_FILE))
-            history = saved.get("history", [])
-        print(f"  Resumed from epoch {best_epoch}  "
-              f"(best AUC={best_auc:.4f})  "
-              f"new LR={args.lr:.2e}")
+    
+    if args.freeze_backbone:
+        for p in model.encoder.parameters():
+            p.requires_grad = False
+        print("  [Transfer Learning] Frame encoder frozen")
 
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Parameters: {total_params:,}\n")
@@ -149,32 +149,70 @@ def train(args):
     ).to(device))
 
     # ── Optimiser ─────────────────────────────────────────────
-    # Different LRs for backbone vs head
-    backbone_params = list(model.encoder.features.parameters())
-    other_params    = [p for p in model.parameters()
+    # Different LRs for backbone vs temporal/head components
+    trainable_params = [p for p in model.parameters() if p.requires_grad]
+    
+    try:
+        backbone_params = list(model.encoder.features.parameters())
+        other_params = [p for p in trainable_params
                        if not any(p is q for q in backbone_params)]
-
-    optimizer = torch.optim.AdamW([
-        {"params": backbone_params, "lr": args.lr * 0.1},
-        {"params": other_params,    "lr": args.lr},
-    ], weight_decay=1e-4)
+        param_groups = [
+            {"params": backbone_params, "lr": args.lr * 0.1},
+            {"params": other_params, "lr": args.lr},
+        ] if backbone_params else [{"params": trainable_params, "lr": args.lr}]
+    except (AttributeError, RuntimeError):
+        param_groups = [{"params": trainable_params, "lr": args.lr}]
+    
+    optimizer = torch.optim.AdamW(param_groups, weight_decay=1e-4)
 
     n_steps = args.epochs * len(train_loader)
+    if len(param_groups) == 2:
+        max_lr_list = [args.lr * 0.1, args.lr]
+    else:
+        max_lr_list = [args.lr]
+
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer,
-        max_lr      = [args.lr * 0.1, args.lr],
-        total_steps = n_steps,
-        pct_start   = 0.05,
-        anneal_strategy = "cos",
+        max_lr=max_lr_list,
+        total_steps=n_steps,
+        pct_start=0.05,
+        anneal_strategy="cos",
     )
 
-    scaler = GradScaler("cuda")
+    scaler = GradScaler("cuda", enabled=torch.cuda.is_available())
 
-    # ── Training loop ──────────────────────────────────────────
-    if not args.resume:
-        best_auc   = 0.0
-        best_epoch = 0
-        history    = []
+    start_epoch = 1
+    best_auc    = 0.0
+    best_epoch  = 0
+    history     = []
+
+    # ── Optional resume ────────────────────────────────────────
+    if args.resume:
+        if LATEST_MODEL.exists():
+            ck = torch.load(LATEST_MODEL, weights_only=False)
+            model.load_state_dict(ck["model_state"])
+            optimizer.load_state_dict(ck["optimizer_state"])
+            scheduler.load_state_dict(ck["scheduler_state"])
+            best_auc    = ck.get("best_auc", ck.get("val_auc", 0.0))
+            best_epoch  = ck.get("best_epoch", ck.get("epoch", 0))
+            start_epoch = ck.get("epoch") + 1
+            history     = ck.get("history", [])
+            print(f"  Resumed from latest epoch {ck['epoch']} (best epoch {best_epoch}, best AUC={best_auc:.4f})")
+        elif BEST_MODEL.exists():
+            ck = torch.load(BEST_MODEL, weights_only=False)
+            model.load_state_dict(ck["model_state"])
+            best_auc    = ck.get("val_auc", 0.0)
+            best_epoch  = ck.get("epoch", 0)
+            start_epoch = best_epoch + 1
+            # Scale down LR for fine-tuning
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = param_group['lr'] * 0.3
+            # Load history if present
+            if HISTORY_FILE.exists():
+                with open(HISTORY_FILE) as _f:
+                    saved = json.load(_f)
+                history = saved.get("history", [])
+            print(f"  Resumed from best checkpoint epoch {best_epoch} (best AUC={best_auc:.4f}), learning rate scaled down.")
 
     patience   = args.patience
 
@@ -186,11 +224,14 @@ def train(args):
         for batch_idx, (videos, labels) in enumerate(train_loader):
             videos = videos.to(device, non_blocking=True)
             labels = labels.float().to(device)
+            
+            # Apply label smoothing
+            smoothed_labels = labels * (1.0 - args.label_smoothing) + 0.5 * args.label_smoothing
 
             optimizer.zero_grad()
-            with autocast("cuda"):
+            with autocast(device_type=str(device).split(":")[0]):
                 logit, _ = model(videos)
-                loss = criterion(logit.squeeze(1), labels)
+                loss = criterion(logit.squeeze(1), smoothed_labels)
 
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
@@ -234,7 +275,21 @@ def train(args):
                 "val_acc"        : vm["acc"],
                 "args"           : vars(args),
             }, BEST_MODEL)
-            print(f"  ★ New best saved  AUC={best_auc:.4f}")
+            print(f"  * New best saved  AUC={best_auc:.4f}")
+
+        # Save latest
+        torch.save({
+            "epoch"          : epoch,
+            "model_state"    : model.state_dict(),
+            "optimizer_state": optimizer.state_dict(),
+            "scheduler_state": scheduler.state_dict(),
+            "best_auc"       : best_auc,
+            "best_epoch"     : best_epoch,
+            "val_auc"        : vm["auc"],
+            "val_acc"        : vm["acc"],
+            "history"        : history,
+            "args"           : vars(args),
+        }, LATEST_MODEL)
 
         patience_remaining = patience - (epoch - best_epoch)
         if patience_remaining <= 0:
@@ -243,29 +298,42 @@ def train(args):
 
     # ── Final test ────────────────────────────────────────────
     print("\n" + "="*60)
-    print("Loading best checkpoint and evaluating on test set …")
     ckpt = torch.load(BEST_MODEL, weights_only=False)
     model.load_state_dict(ckpt["model_state"])
-
-    _, tm = evaluate(model, test_loader, device, criterion)
-    print(f"\n  TEST RESULTS:")
-    print(f"    Accuracy    : {tm['acc']*100:.2f}%")
-    print(f"    AUC-ROC     : {tm['auc']:.4f}")
-    print(f"    Sensitivity : {tm['sens']*100:.2f}%  (ASD recall)")
-    print(f"    Specificity : {tm['spec']*100:.2f}%  (TD recall)")
-    print(f"    F1 Score    : {tm['f1']:.4f}")
-    print("="*60)
 
     result = {
         "best_epoch": best_epoch,
         "best_val_auc": best_auc,
-        "test": tm,
         "history": history,
     }
+
+    if test_loader is not None:
+        print("Loading best checkpoint and evaluating on test set ...")
+        _, tm = evaluate(model, test_loader, device, criterion)
+        print(f"\n  TEST RESULTS:")
+        print(f"    Accuracy    : {tm['acc']*100:.2f}%")
+        print(f"    AUC-ROC     : {tm['auc']:.4f}")
+        print(f"    Sensitivity : {tm['sens']*100:.2f}%  (ASD recall)")
+        print(f"    Specificity : {tm['spec']*100:.2f}%  (TD recall)")
+        print(f"    F1 Score    : {tm['f1']:.4f}")
+        result["test"] = tm
+    else:
+        print("No testing_set found - skipping test evaluation.")
+        print(f"\n  BEST VALIDATION RESULTS (epoch {best_epoch}):")
+        # Re-evaluate on val set with best checkpoint
+        _, vm_final = evaluate(model, val_loader, device, criterion)
+        print(f"    Accuracy    : {vm_final['acc']*100:.2f}%")
+        print(f"    AUC-ROC     : {vm_final['auc']:.4f}")
+        print(f"    Sensitivity : {vm_final['sens']*100:.2f}%  (ASD recall)")
+        print(f"    Specificity : {vm_final['spec']*100:.2f}%  (TD recall)")
+        print(f"    F1 Score    : {vm_final['f1']:.4f}")
+        result["val_final"] = vm_final
+    print("="*60)
+
     with open(HISTORY_FILE, "w") as f:
         json.dump(result, f, indent=2)
-    print(f"\nHistory saved → {HISTORY_FILE}")
-    print(f"Best model   → {BEST_MODEL}")
+    print(f"\nHistory saved -> {HISTORY_FILE}")
+    print(f"Best model   -> {BEST_MODEL}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
