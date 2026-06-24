@@ -11,13 +11,16 @@ Then open: http://127.0.0.1:5000
 import os, sys, time, base64, io, json, tempfile, traceback
 sys.path.insert(0, os.path.dirname(__file__))
 
-import numpy as np
-import torch
 import cv2
+import torch
+import numpy as np
 from PIL import Image
 from flask import Flask, request, jsonify, render_template, send_from_directory
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
+
+# Limit threads to massively reduce RAM footprint on free tier hosting
+torch.set_num_threads(1)
 
 from video_model   import model_factory
 from video_dataset import VideoTransform, _sample_frames as _ds_sample_frames
