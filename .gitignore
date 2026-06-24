@@ -17,6 +17,7 @@ env/
 # Large model / data files
 checkpoints/*.pth
 checkpoints/*.pt
+!checkpoints/video_model_best.pth
 frame_cache/
 pose_cache_autism_data/
 *.npy
