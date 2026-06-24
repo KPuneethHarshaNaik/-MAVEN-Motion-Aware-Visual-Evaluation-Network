@@ -1,5 +1,5 @@
-# Use an official lightweight Python runtime
-FROM python:3.10-slim
+# Use an official lightweight Python runtime (pinned to bookworm for stable apt packages)
+FROM python:3.10-slim-bookworm
 
 # Set environment variables to prevent Python from writing .pyc files and to ensure output is unbuffered
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -8,7 +8,7 @@ ENV PORT=5000
 
 # Install system dependencies required by OpenCV (cv2)
 RUN apt-get update && apt-get install -y \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
