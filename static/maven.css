@@ -800,3 +800,15 @@ button { font-family: inherit; cursor: pointer; }
   from { opacity: 0; filter: blur(8px); transform: translateY(4px); }
   to { opacity: 1; filter: blur(0px); transform: translateY(0); }
 }
+
+/* ── Mobile Responsiveness ───────────────────────────────────── */
+@media (max-width: 768px) {
+  .nav-links { display: none; }
+  .detail-grid { grid-template-columns: 1fr; }
+  .dashboard-split { grid-template-columns: 1fr; }
+  #frame-grid { grid-template-columns: repeat(2, 1fr); }
+  .stat-row { flex-direction: column; gap: 8px; }
+  #preview-bar { flex-direction: column; text-align: center; }
+  .pipeline-track { padding-bottom: 24px; }
+  .result-card { padding: 20px; }
+}

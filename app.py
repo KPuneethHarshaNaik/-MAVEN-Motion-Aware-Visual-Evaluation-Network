@@ -4,7 +4,7 @@ app.py — MAVEN Flask Backend
 Serves the visual pipeline frontend and handles video inference requests.
 
 Run:
-    python ASD-Detection-Model/app.py
+    python app.py
 Then open: http://127.0.0.1:5000
 """
 
@@ -18,6 +18,9 @@ from PIL import Image
 from flask import Flask, request, jsonify, render_template, send_from_directory
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
+import uuid
+import threading
+import hashlib
 
 # Limit threads to massively reduce RAM footprint on free tier hosting
 torch.set_num_threads(1)
@@ -71,6 +74,17 @@ def get_model():
         raise KeyError("Checkpoint missing model_state/model_state_dict")
     _model.load_state_dict(state_dict)
     _model = _model.to(DEVICE).eval()
+    
+    # Warmup pass
+    with torch.no_grad():
+        try:
+            from torch.amp import autocast
+            with autocast(device_type=str(DEVICE).split(":")[0] if DEVICE.type == "cuda" else "cpu"):
+                dummy_input = torch.zeros((1, N_FRAMES, 3, IMG_SIZE, IMG_SIZE), device=DEVICE)
+                _model(dummy_input)
+        except Exception as e:
+            print(f"Warmup failed: {e}")
+
     print(f"[MAVEN] Model loaded — epoch={_ck_meta['epoch']}, "
           f"AUC={_ck_meta['val_auc']}, Acc={_ck_meta['val_acc']}%  [{DEVICE}]")
     return _model
@@ -79,7 +93,6 @@ def get_model():
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _frame_to_b64(frame_bgr: np.ndarray, thumb_size: int = 160) -> str:
-    """Convert BGR numpy frame to base64 JPEG string for the frontend."""
     h, w = frame_bgr.shape[:2]
     scale = thumb_size / max(h, w)
     nh, nw = int(h * scale), int(w * scale)
@@ -92,24 +105,10 @@ def _frame_to_b64(frame_bgr: np.ndarray, thumb_size: int = 160) -> str:
 
 
 def _sample_frames(video_path: str, n: int, size: int):
-    """
-    Uniformly sample n frames from a video using the EXACT same pipeline
-    as training (VideoTransform from video_dataset.py).
-    Returns:
-        tensor     : (1, n, 3, size, size)  normalised for model
-        thumbs     : list[str]              base64 JPEG thumbnails
-        raw_frames : list[ndarray]          raw BGR frames
-    """
-    # Use the identical sampling function from video_dataset.py
     raw_frames = _ds_sample_frames(video_path, n_frames=n, strategy="uniform")
-
-    # Thumbnails from raw BGR frames
     thumb_list = [_frame_to_b64(f, thumb_size=160) for f in raw_frames]
-
-    # Use the identical transform pipeline from training
     tfm = VideoTransform(img_size=size)
     video_tensor = tfm(raw_frames).unsqueeze(0)   # (1, n, 3, H, W)
-
     return video_tensor, thumb_list, raw_frames
 
 def _video_meta(video_path: str) -> dict:
@@ -126,64 +125,62 @@ def _video_meta(video_path: str) -> dict:
             "width": w, "height": h, "duration": round(dur, 2)}
 
 
-# ── Routes ────────────────────────────────────────────────────────────────────
-@app.route("/")
-def home():
-    return render_template("home.html")
+# ── Jobs & Caching ────────────────────────────────────────────────────────────
 
-@app.route("/model")
-def model_page():
-    # Attempt to load the model on startup/first-visit if not loaded
-    try:
-        get_model()
-    except Exception:
-        pass
-    return render_template("index.html")
+job_store = {}
+inference_cache = {}
 
+def _compute_hash(filepath):
+    h = hashlib.sha256()
+    with open(filepath, 'rb') as f:
+        while chunk := f.read(8192):
+            h.update(chunk)
+    return h.hexdigest()
 
-ALLOWED_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
-
-@app.route("/predict", methods=["POST"])
-@app.route("/api/predict", methods=["POST"])
-def predict():
+def process_video_job(job_id, tmp_path):
+    job_store[job_id]["status"] = "processing"
     t_start = time.perf_counter()
-    if "video" not in request.files:
-        return jsonify({"error": "No video file in request"}), 400
-
-    f   = request.files["video"]
-    ext = os.path.splitext(secure_filename(f.filename))[1].lower()
-    if ext not in ALLOWED_EXTENSIONS:
-        return jsonify({"error": f"Unsupported file type: {ext}. Use MP4, AVI, MOV, MKV, or WebM."}), 400
-    if not ext:
-        ext = ".mp4"
-    tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
-    tmp_path = tmp.name
-    tmp.close()
-
     try:
-        f.save(tmp_path)
+        # Validate duration
+        cap = cv2.VideoCapture(tmp_path)
+        if not cap.isOpened():
+            raise ValueError("Could not open video file.")
+        fps = cap.get(cv2.CAP_PROP_FPS) or 25
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        cap.release()
+        duration = total_frames / fps if fps > 0 else 0
+        if duration > 120:
+            raise ValueError(f"Video is too long ({duration:.1f}s). Maximum allowed is 120s.")
+        if total_frames < 5:
+            raise ValueError("Video is too short or contains invalid frames.")
+
+        file_hash = _compute_hash(tmp_path)
+        if file_hash in inference_cache:
+            res = inference_cache[file_hash]
+            job_store[job_id]["result"] = res
+            job_store[job_id]["status"] = "completed"
+            os.unlink(tmp_path)
+            return
+
         model = get_model()
 
-        # Stage 1 — video meta
         t1 = time.perf_counter()
         meta = _video_meta(tmp_path)
         t1_ms = round((time.perf_counter() - t1) * 1000, 1)
 
-        # Stage 2 — frame extraction
         t2 = time.perf_counter()
         video_tensor, thumbs, _ = _sample_frames(tmp_path, N_FRAMES, IMG_SIZE)
         t2_ms = round((time.perf_counter() - t2) * 1000, 1)
 
-        # Stage 3+4 — Full model inference (CNN + Transformer + Attention + Classifier)
         t3 = time.perf_counter()
         video_tensor = video_tensor.to(DEVICE)
         result = model.predict(video_tensor)
         t3_ms = round((time.perf_counter() - t3) * 1000, 1)
-        t4_ms = 0.0  # included in t3_ms (single pass)
+        t4_ms = 0.0
 
         total_ms = round((time.perf_counter() - t_start) * 1000, 1)
 
-        return jsonify({
+        res = {
             "status"       : "ok",
             "label"        : result["label_name"],
             "asd_prob"     : round(result["prob"] * 100, 2),
@@ -203,19 +200,86 @@ def predict():
                 "lstm_attn_ms"       : t4_ms,
                 "total_ms"         : total_ms,
             }
-        })
+        }
+        inference_cache[file_hash] = res
+        job_store[job_id]["result"] = res
+        job_store[job_id]["status"] = "completed"
 
     except Exception as e:
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        job_store[job_id]["error"] = str(e)
+        job_store[job_id]["status"] = "failed"
     finally:
         try:
-            os.unlink(tmp_path)
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
         except Exception:
             pass
 
 
-# ── Model info endpoint ────────────────────────────────────────────────────────
+# ── Routes ────────────────────────────────────────────────────────────────────
+@app.route("/")
+def home():
+    return render_template("home.html")
+
+@app.route("/model")
+def model_page():
+    try:
+        get_model()
+    except Exception:
+        pass
+    return render_template("index.html")
+
+ALLOWED_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
+
+@app.route("/predict", methods=["POST"])
+@app.route("/api/predict", methods=["POST"])
+def predict():
+    if "video" not in request.files:
+        return jsonify({"error": "No video file in request"}), 400
+
+    f = request.files["video"]
+    ext = os.path.splitext(secure_filename(f.filename))[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        return jsonify({"error": f"Unsupported file type: {ext}. Use MP4, AVI, MOV, MKV, or WebM."}), 400
+    if not ext:
+        ext = ".mp4"
+    tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
+    tmp_path = tmp.name
+    tmp.close()
+
+    try:
+        f.save(tmp_path)
+    except Exception as e:
+        os.unlink(tmp_path)
+        return jsonify({"error": str(e)}), 500
+        
+    job_id = str(uuid.uuid4())
+    job_store[job_id] = {"status": "pending"}
+    
+    if request.form.get("async") == "true":
+        threading.Thread(target=process_video_job, args=(job_id, tmp_path)).start()
+        return jsonify({"job_id": job_id, "status": "pending"})
+    else:
+        # Synchronous mode
+        process_video_job(job_id, tmp_path)
+        job = job_store[job_id]
+        if job["status"] == "failed":
+            return jsonify({"error": job.get("error", "Unknown error")}), 500
+        return jsonify(job["result"])
+
+@app.route("/status/<job_id>", methods=["GET"])
+def get_status(job_id):
+    if job_id not in job_store:
+        return jsonify({"error": "Job not found"}), 404
+    job = job_store[job_id]
+    if job["status"] == "failed":
+        return jsonify({"status": "failed", "error": job.get("error", "Unknown error")})
+    elif job["status"] == "completed":
+        return jsonify({"status": "completed", "result": job["result"]})
+    else:
+        return jsonify({"status": job["status"]})
+
 @app.route("/model_info")
 @app.route("/api/model_info")
 def model_info():
@@ -226,7 +290,6 @@ def model_info():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 if __name__ == "__main__":
     print("=" * 60)
     print("  MAVEN — ASD Screening Frontend")
@@ -236,5 +299,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"  Model not loaded at startup: {e}")
     print(f"  Open: http://127.0.0.1:5000")
-    print("Starting MAVEN screening server...")
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    print("Starting MAVEN screening server with Waitress...")
+    from waitress import serve
+    serve(app, host="127.0.0.1", port=5000)

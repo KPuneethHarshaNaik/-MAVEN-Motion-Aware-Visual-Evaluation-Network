@@ -258,7 +258,7 @@ main{ max-width: 1200px; margin: 0 auto; padding: 0 var(--content-pad); }
 }
 
 /* Error Message */
-#error-msg{
+#error-box{
   display:none; margin:24px 0; padding:16px 20px;
   background:rgba(255,107,107,.1); border:1px solid var(--color-warm); border-radius:var(--radius-md);
   color:var(--color-warm); font-size:var(--text-sm); font-family:var(--font-mono);
@@ -610,16 +610,39 @@ async function runPrediction(){
 
   const fd = new FormData();
   fd.append('video', selectedFile);
+  fd.append('async', 'true');
 
   try {
     const res = await fetch('/predict', {method:'POST', body:fd});
-    const data = await res.json();
-    if(data.error){ showError(data.error); btn.disabled=false; btn.textContent='▶ Run Screening'; return; }
-    renderResult(data);
+    const initData = await res.json();
+    if(initData.error){ showError(initData.error); btn.disabled=false; btn.textContent='▶ Run Screening'; return; }
+    
+    const jobId = initData.job_id;
+    const pollTimer = setInterval(async () => {
+      try {
+        const statusRes = await fetch('/status/' + jobId);
+        const data = await statusRes.json();
+        
+        if (data.status === 'failed') {
+          clearInterval(pollTimer);
+          showError(data.error || 'Unknown error occurred.');
+          btn.disabled=false; btn.textContent='▶ Run Screening';
+        } else if (data.status === 'completed') {
+          clearInterval(pollTimer);
+          renderResult(data.result);
+          btn.disabled=false; btn.textContent='▶ Run Screening';
+        }
+      } catch (err) {
+        clearInterval(pollTimer);
+        showError('Network error during polling: ' + err.message);
+        btn.disabled=false; btn.textContent='▶ Run Screening';
+      }
+    }, 1000);
+
   } catch(e){
     showError('Network error: '+e.message);
+    btn.disabled=false; btn.textContent='▶ Run Screening';
   }
-  btn.disabled=false; btn.textContent='▶ Run Screening';
 }
 
 /* ──────────────────────────────────────────────────────────
@@ -793,25 +816,30 @@ function renderResult(data){
     const topIdx = data.top_frames.map(i=>i+1).join(', ');
     const maxW   = Math.max(...data.frame_weights);
     const maxF   = data.frame_weights.indexOf(maxW)+1;
-    document.getElementById('why-text').textContent =
+    
+    let clinicalContext = "";
+    if (data.asd_prob > 80) clinicalContext = "High confidence (>80%) suggests strong traits consistent with ASD.";
+    else if (data.asd_prob > 50) clinicalContext = "Moderate confidence (>50%) suggests traits consistent with ASD.";
+    else if (data.asd_prob > 20) clinicalContext = "Low confidence (<50%) suggests fewer traits consistent with ASD.";
+    else clinicalContext = "Very low probability (<20%) suggests traits consistent with typical development.";
+
+    document.getElementById('why-text').innerHTML =
+      `<strong>Clinical Interpretation:</strong> ${clinicalContext}<br><br>`+
       `The model assigned the highest attention weight (${maxW.toFixed(2)}%) to frame ${maxF}. `+
       `The top 3 discriminative frames are: ${topIdx}. `+
       (isASD
-        ? `Visual and motion patterns in these frames show characteristics the model associates with ASD behaviours — `+
-          `possibly restricted movement variation, repetitive postures, or atypical interaction patterns. `+
-          `ASD raw probability: ${data.asd_prob.toFixed(1)}%.`
-        : `The motion and visual patterns across these frames appear consistent with typical developmental behaviour. `+
-          `TD raw probability: ${data.td_prob.toFixed(1)}%.`);
+        ? `Visual and motion patterns in these frames show characteristics the model associates with ASD behaviours.`
+        : `Visual and motion patterns in these frames show typical developmental characteristics.`);
 
-    // Timing row
-    const tr = document.getElementById('timing-row');
-    tr.innerHTML = `
-      <div class="timing-chip">Video read <span>${tm.video_read_ms} ms</span></div>
-      <div class="timing-chip">Frame extract <span>${tm.frame_extract_ms} ms</span></div>
-      <div class="timing-chip">CNN encode <span>${tm.cnn_encode_ms} ms</span></div>
-      <div class="timing-chip">BiLSTM+Attn <span>${tm.lstm_attn_ms} ms</span></div>
-      <div class="timing-chip">Total <span>${tm.total_ms} ms</span></div>
-    `;
+    // Timing
+    const tm = data.timing;
+    const timingHTML = 
+      `<div class="timing-chip">Video I/O: <span>${tm.video_read_ms}ms</span></div>` +
+      `<div class="timing-chip">Frames: <span>${tm.frame_extract_ms}ms</span></div>` +
+      `<div class="timing-chip">CNN: <span>${tm.cnn_encode_ms}ms</span></div>` +
+      `<div class="timing-chip">Attention: <span>${tm.lstm_attn_ms}ms</span></div>` +
+      `<div class="timing-chip" style="border-color:var(--color-accent); color:var(--color-text-primary);">Total Inference: <span>${tm.total_ms}ms</span></div>`;
+    document.getElementById('timing-row').innerHTML = timingHTML;
 
     // Scroll to result
     setTimeout(()=>rs.scrollIntoView({behavior:'smooth',block:'start'}),300);

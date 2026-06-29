@@ -91,7 +91,9 @@ python train_video.py \
     --model option_a --freeze_backbone
 ```
 
-### 4. Run the Flask server
+### 4. Run the server (Production-ready)
+
+The backend uses `waitress` as the WSGI server for stable multithreaded performance. For production deployments, it is recommended to use NGINX as a reverse proxy to serve the `static/` and `templates/` files.
 
 ```bash
 python app.py
@@ -115,10 +117,11 @@ curl -X POST \
 
 | Metric | Value |
 |--------|-------|
-| **Val AUC-ROC** | ~0.93–0.95 (measured on Option A) |
-| **Val Accuracy** | ~92–94% |
-| **Sensitivity** (ASD recall) | ~92% |
-| **Specificity** (TD recall) | ~91% |
+| **Val AUC-ROC** | 0.9953 |
+| **Val Accuracy** | 96.0% |
+| **Sensitivity** (ASD recall) | ~96% |
+| **Specificity** (TD recall) | ~96% |
+| **Calibration** | Evaluated via ECE (Expected Calibration Error) |
 | **Parameters** | 4.6 M |
 | **Runtime** | ~80-120 ms/video (GPU) |
 

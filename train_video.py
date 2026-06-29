@@ -63,9 +63,10 @@ def parse_args():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-def compute_metrics(labels, probs):
+def compute_metrics(labels, probs, n_bins=10):
     preds  = (np.array(probs) >= 0.5).astype(int)
     labels = np.array(labels)
+    probs = np.array(probs)
     tn, fp, fn, tp = confusion_matrix(labels, preds, labels=[0, 1]).ravel()
     acc  = (tp + tn) / (tp + tn + fp + fn + 1e-9)
     sens = tp / (tp + fn + 1e-9)
@@ -75,7 +76,20 @@ def compute_metrics(labels, probs):
         auc = roc_auc_score(labels, probs)
     except Exception:
         auc = 0.5
-    return dict(acc=acc, auc=auc, sens=sens, spec=spec, f1=f1)
+        
+    bin_boundaries = np.linspace(0, 1, n_bins + 1)
+    bin_lowers = bin_boundaries[:-1]
+    bin_uppers = bin_boundaries[1:]
+    ece = 0.0
+    for bin_lower, bin_upper in zip(bin_lowers, bin_uppers):
+        in_bin = (probs > bin_lower) & (probs <= bin_upper)
+        prop_in_bin = in_bin.mean()
+        if prop_in_bin > 0:
+            accuracy_in_bin = labels[in_bin].mean()
+            avg_confidence_in_bin = probs[in_bin].mean()
+            ece += np.abs(avg_confidence_in_bin - accuracy_in_bin) * prop_in_bin
+
+    return dict(acc=acc, auc=auc, sens=sens, spec=spec, f1=f1, ece=ece)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -101,6 +115,16 @@ def evaluate(model, loader, device, criterion):
 
 # ─────────────────────────────────────────────────────────────────────────────
 def train(args):
+    gitattr = Path(__file__).parent / ".gitattributes"
+    if not gitattr.exists() or "*.pth" not in gitattr.read_text():
+        raise RuntimeError("CRITICAL: Git LFS is not enforced for .pth files. Please configure .gitattributes before training.")
+
+    data_path = Path(args.data_root) if args.data_root else Path(__file__).parent / "autism_data_anonymized"
+    cache_path = data_path / "frame_cache"
+    if not cache_path.exists() or not any(cache_path.iterdir()):
+        print("CRITICAL WARNING: Frame pre-caching is not found! Training will be severely bottlenecked.")
+        print("It is highly recommended to run the caching script first.")
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"\n{'='*60}")
     print(f"  VideoASDClassifier  |  device={device}")
@@ -260,6 +284,7 @@ def train(args):
               f"val_loss={val_loss:.4f}  "
               f"val_acc={vm['acc']*100:.2f}%  "
               f"val_auc={vm['auc']:.4f}  "
+              f"val_ece={vm['ece']:.4f}  "
               f"sens={vm['sens']*100:.1f}%  "
               f"spec={vm['spec']*100:.1f}%")
 
@@ -267,15 +292,19 @@ def train(args):
         if vm["auc"] > best_auc:
             best_auc   = vm["auc"]
             best_epoch = epoch
-            torch.save({
+            
+            save_dict = {
                 "epoch"          : epoch,
                 "model_state"    : model.state_dict(),
                 "optimizer_state": optimizer.state_dict(),
                 "val_auc"        : best_auc,
                 "val_acc"        : vm["acc"],
                 "args"           : vars(args),
-            }, BEST_MODEL)
-            print(f"  * New best saved  AUC={best_auc:.4f}")
+            }
+            torch.save(save_dict, BEST_MODEL)
+            versioned_path = CHECKPOINT_DIR / f"video_model_v{int(time.time())}_auc{int(best_auc*10000)}.pth"
+            torch.save(save_dict, versioned_path)
+            print(f"  * New best saved  AUC={best_auc:.4f}  ECE={vm['ece']:.4f}")
 
         # Save latest
         torch.save({
@@ -313,6 +342,7 @@ def train(args):
         print(f"\n  TEST RESULTS:")
         print(f"    Accuracy    : {tm['acc']*100:.2f}%")
         print(f"    AUC-ROC     : {tm['auc']:.4f}")
+        print(f"    ECE Score   : {tm['ece']:.4f}")
         print(f"    Sensitivity : {tm['sens']*100:.2f}%  (ASD recall)")
         print(f"    Specificity : {tm['spec']*100:.2f}%  (TD recall)")
         print(f"    F1 Score    : {tm['f1']:.4f}")
@@ -324,6 +354,7 @@ def train(args):
         _, vm_final = evaluate(model, val_loader, device, criterion)
         print(f"    Accuracy    : {vm_final['acc']*100:.2f}%")
         print(f"    AUC-ROC     : {vm_final['auc']:.4f}")
+        print(f"    ECE Score   : {vm_final['ece']:.4f}")
         print(f"    Sensitivity : {vm_final['sens']*100:.2f}%  (ASD recall)")
         print(f"    Specificity : {vm_final['spec']*100:.2f}%  (TD recall)")
         print(f"    F1 Score    : {vm_final['f1']:.4f}")
