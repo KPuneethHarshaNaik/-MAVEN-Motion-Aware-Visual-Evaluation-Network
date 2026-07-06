@@ -164,7 +164,9 @@ main{ max-width: 1200px; margin: 0 auto; padding: 0 var(--content-pad); }
 .dot-pink{ background:var(--color-warm); }
 .dot-green{ background:var(--color-accent); }
 
-#frame-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+#frame-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; max-height: 400px; overflow-y: auto; padding-right: 4px; }
+#frame-grid::-webkit-scrollbar { width: 5px; }
+#frame-grid::-webkit-scrollbar-thumb { background: var(--color-border-lit); border-radius: 4px; }
 .frame-thumb{
   border-radius:var(--radius-sm); overflow:hidden; position:relative; cursor:pointer;
   border:2px solid transparent; transition:border-color .2s, box-shadow .2s;
@@ -307,6 +309,7 @@ main{ max-width: 1200px; margin: 0 auto; padding: 0 var(--content-pad); }
   <div class="screening-wrapper">
 
 
+<main>
 <!-- Upload -->
 <section id="upload-section">
   <div id="drop-zone" onclick="document.getElementById('file-input').click()">
@@ -354,7 +357,7 @@ main{ max-width: 1200px; margin: 0 auto; padding: 0 var(--content-pad); }
       <div class="stage-num">Stage 02</div>
       <span class="stage-icon">&#127775;</span>
       <div class="stage-name">Frame Sampling</div>
-      <div class="stage-desc">Uniformly extract 16 representative frames at 96×96 px</div>
+      <div class="stage-desc">Uniformly extract 30 representative frames at 112×112 px</div>
       <div class="stage-timing" id="t2"></div>
     </div>
     <div class="stage-arrow" id="a2">&#8594;</div>
@@ -365,7 +368,7 @@ main{ max-width: 1200px; margin: 0 auto; padding: 0 var(--content-pad); }
       <div class="stage-num">Stage 03</div>
       <span class="stage-icon">&#129302;</span>
       <div class="stage-name">CNN Encoding</div>
-      <div class="stage-desc">MobileNetV3-Small extracts 256-dim feature vector per frame</div>
+      <div class="stage-desc">EfficientNetV2-S extracts 256-dim feature vector per frame</div>
       <div class="stage-timing" id="t3"></div>
     </div>
     <div class="stage-arrow" id="a3">&#8594;</div>
@@ -375,8 +378,8 @@ main{ max-width: 1200px; margin: 0 auto; padding: 0 var(--content-pad); }
       <div class="spin"></div>
       <div class="stage-num">Stage 04</div>
       <span class="stage-icon">&#128200;</span>
-      <div class="stage-name">BiLSTM + Attention</div>
-      <div class="stage-desc">2-layer BiLSTM captures temporal patterns; 4-head self-attention weights key moments</div>
+      <div class="stage-name">Transformer + Attention</div>
+      <div class="stage-desc">4-layer Temporal Transformer (8 heads) captures temporal patterns; self-attention weights key moments</div>
       <div class="stage-timing" id="t4"></div>
     </div>
     <div class="stage-arrow" id="a4">&#8594;</div>
@@ -397,7 +400,7 @@ main{ max-width: 1200px; margin: 0 auto; padding: 0 var(--content-pad); }
 
     <!-- Frame thumbnails -->
     <div class="panel" id="panel-frames">
-      <div class="panel-title"><span class="dot dot-cyan"></span>Extracted Frames (16 of <span id="total-frames">?</span>)</div>
+      <div class="panel-title"><span class="dot dot-cyan"></span>Extracted Frames (30 of <span id="total-frames">?</span>)</div>
       <div id="frame-grid"></div>
       <p style="font-size:.72rem;color:var(--muted);margin-top:10px">
         &#9733; Yellow border = frames the model found most discriminative (top attention weight)
@@ -408,18 +411,18 @@ main{ max-width: 1200px; margin: 0 auto; padding: 0 var(--content-pad); }
     <div class="panel" id="panel-arch">
       <div class="panel-title"><span class="dot dot-green"></span>Model Architecture</div>
       <div style="font-size:.82rem;line-height:2;font-family:monospace;color:var(--muted)">
-        <div><span style="color:var(--accent2)">Input</span>  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(1, 16, 3, 96, 96)</div>
+        <div><span style="color:var(--accent2)">Input</span>  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(1, 30, 3, 112, 112)</div>
         <div>&nbsp;&nbsp;&#8595;</div>
-        <div><span style="color:var(--accent)">FrameEncoder</span> &times;16 frames</div>
-        <div style="padding-left:16px;font-size:.75rem;color:var(--border)">MobileNetV3-Small → Linear(576,256) → LN → GELU → Dropout</div>
-        <div>&nbsp;&nbsp;&#8595; (1, 16, 256) + pos_emb</div>
-        <div><span style="color:var(--accent)">BiLSTM</span>  &nbsp;&nbsp;× 2 layers, hidden=256, bidirectional</div>
-        <div style="padding-left:16px;font-size:.75rem;color:var(--border)">&rarr; (1, 16, 512)</div>
+        <div><span style="color:var(--accent)">FrameEncoder</span> &times;30 frames</div>
+        <div style="padding-left:16px;font-size:.75rem;color:var(--border)">EfficientNetV2-S → Linear(1280,256) → LN → GELU → Dropout</div>
+        <div>&nbsp;&nbsp;&#8595; (1, 30, 256) + pos_emb</div>
+        <div><span style="color:var(--accent)">Transformer</span>  &nbsp;&nbsp;4 layers, 8 heads, dim=256, ff=1024</div>
+        <div style="padding-left:16px;font-size:.75rem;color:var(--border)">→ (1, 30, 256)</div>
         <div>&nbsp;&nbsp;&#8595;</div>
-        <div><span style="color:var(--accent3)">SelfAttention</span> 4 heads, d=512</div>
-        <div style="padding-left:16px;font-size:.75rem;color:var(--border)">&rarr; weighted pool &rarr; (1, 512)</div>
+        <div><span style="color:var(--accent3)">SelfAttention</span> 4 heads, d=256</div>
+        <div style="padding-left:16px;font-size:.75rem;color:var(--border)">→ weighted pool → (1, 256)</div>
         <div>&nbsp;&nbsp;&#8595;</div>
-        <div><span style="color:var(--green)">MLP</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;512 &rarr; 128 &rarr; 1 (sigmoid)</div>
+        <div><span style="color:var(--green)">MLP</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;256 → 128 → 1 (sigmoid + temp scaling)</div>
         <div style="margin-top:8px;font-size:.8rem">
           <span style="color:var(--muted)">Parameters: </span><span style="color:var(--text)" id="arch-params">4,874,275</span>
           &nbsp;&middot;&nbsp;
@@ -498,6 +501,7 @@ main{ max-width: 1200px; margin: 0 auto; padding: 0 var(--content-pad); }
     </div>
 
     <div class="timing-row" id="timing-row"></div>
+    <div style="text-align:center;margin-top:24px"><button class="btn-primary" onclick="resetPage()">Try Another Video</button></div>
 
     <p style="font-size:.72rem;color:var(--muted);margin-top:24px;max-width:500px;margin-left:auto;margin-right:auto">
       &#9888; This is an AI-assisted screening aid only. A formal ASD diagnosis must be made by a licensed clinician using standardised instruments (ADOS-2, ADI-R).
@@ -511,53 +515,7 @@ main{ max-width: 1200px; margin: 0 auto; padding: 0 var(--content-pad); }
   </div>
 
 <script>
-/* ──────────────────────────────────────────────────────────
-   Particle background
-────────────────────────────────────────────────────────── */
-(function(){
-  const cvs = document.getElementById('bg-canvas');
-  if (!cvs) return;
-  const ctx = cvs.getContext('2d');
-  let W,H,pts=[];
-  function resize(){W=cvs.width=innerWidth;H=cvs.height=innerHeight}
-  resize(); window.addEventListener('resize',resize);
-  for(let i=0;i<60;i++) pts.push({
-    x:Math.random()*1400,y:Math.random()*900,
-    vx:(Math.random()-.5)*.2,vy:(Math.random()-.5)*.2,
-    r:Math.random()*1.5+.5
-  });
-  function frame(){
-    ctx.clearRect(0,0,W,H);
-    pts.forEach(p=>{
-      p.x+=p.vx; p.y+=p.vy;
-      if(p.x<0||p.x>W) p.vx*=-1;
-      if(p.y<0||p.y>H) p.vy*=-1;
-      ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
-      ctx.fillStyle='rgba(99,102,241,.5)';ctx.fill();
-    });
-    pts.forEach((a,i)=>pts.slice(i+1).forEach(b=>{
-      const d=Math.hypot(a.x-b.x,a.y-b.y);
-      if(d<120){
-        ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);
-        ctx.strokeStyle=`rgba(99,102,241,${(1-d/120)*.3})`;ctx.lineWidth=.6;ctx.stroke();
-      }
-    }));
-    requestAnimationFrame(frame);
-  }
-  frame();
-})();
 
-/* ──────────────────────────────────────────────────────────
-   Load model meta
-────────────────────────────────────────────────────────── */
-fetch('/model_info').then(r=>r.json()).then(d=>{
-  document.getElementById('badge-epoch').textContent = `Epoch ${d.epoch}`;
-  document.getElementById('badge-auc').textContent   = `AUC ${d.val_auc}`;
-  document.getElementById('badge-acc').textContent   = `Val Acc ${d.val_acc}%`;
-  document.getElementById('badge-device').textContent= d.device.toUpperCase();
-  document.getElementById('arch-params').textContent = Number(d.params).toLocaleString();
-  document.getElementById('arch-device').textContent = d.device;
-}).catch(_=>{});
 
 /* ──────────────────────────────────────────────────────────
    Drag & Drop / File input
@@ -584,9 +542,18 @@ function setFile(f){
 
   const vid = document.getElementById('preview-video');
   vid.src = URL.createObjectURL(f);
-
-  const pb = document.getElementById('preview-bar');
-  pb.style.display='flex';
+  
+  vid.onloadedmetadata = function() {
+    const dur = vid.duration.toFixed(1);
+    const w = vid.videoWidth;
+    const h = vid.videoHeight;
+    document.getElementById('stat-row').innerHTML = `
+      <div class="stat"><span>Res</span>${w}×${h}</div>
+      <div class="stat"><span>Dur</span>${dur}s</div>
+    `;
+    const pb = document.getElementById('preview-bar');
+    pb.style.display='flex';
+  };
 
   // Reset any previous result
   resetUI();
@@ -679,7 +646,7 @@ function renderResult(data){
   markStageDone(1, `${tm.video_read_ms} ms`);
   markStageDone(2, `${tm.frame_extract_ms} ms`);
   markStageDone(3, `${tm.cnn_encode_ms} ms`);
-  markStageDone(4, `${tm.lstm_attn_ms} ms`);
+  markStageDone(4, `${tm.transformer_attn_ms} ms`);
   markStageDone(5, `total ${tm.total_ms} ms`);
 
   // Video meta
@@ -705,10 +672,9 @@ function renderResult(data){
   grid.innerHTML='';
   data.thumbs.forEach((b64,i)=>{
     const isTop = data.top_frames.includes(i);
-    if(!isTop) return; // Only show top extracted frames
     const w = data.frame_weights[i];
     const div = document.createElement('div');
-    div.className='frame-thumb top';
+    div.className = isTop ? 'frame-thumb top' : 'frame-thumb';
     div.title=`Frame ${i+1} — attention: ${w}%`;
     div.innerHTML=`<img src="data:image/jpeg;base64,${b64}" loading="lazy">
       <span class="frame-num">${i+1}</span>
@@ -837,7 +803,7 @@ function renderResult(data){
       `<div class="timing-chip">Video I/O: <span>${tm.video_read_ms}ms</span></div>` +
       `<div class="timing-chip">Frames: <span>${tm.frame_extract_ms}ms</span></div>` +
       `<div class="timing-chip">CNN: <span>${tm.cnn_encode_ms}ms</span></div>` +
-      `<div class="timing-chip">Attention: <span>${tm.lstm_attn_ms}ms</span></div>` +
+      `<div class="timing-chip">Transformer: <span>${tm.transformer_attn_ms}ms</span></div>` +
       `<div class="timing-chip" style="border-color:var(--color-accent); color:var(--color-text-primary);">Total Inference: <span>${tm.total_ms}ms</span></div>`;
     document.getElementById('timing-row').innerHTML = timingHTML;
 
@@ -862,6 +828,20 @@ function showError(msg){
     document.getElementById('s'+i).classList.remove('active','done');
     if(i<5) document.getElementById('a'+i).classList.remove('active');
   }
+}
+
+function resetPage() {
+  resetUI();
+  selectedFile = null;
+  document.getElementById('file-input').value = '';
+  document.getElementById('preview-bar').style.display = 'none';
+  document.getElementById('pipeline-section').style.display = 'none';
+  document.getElementById('drop-zone').classList.remove('has-file');
+  document.getElementById('file-name').style.display = 'none';
+  const btn = document.getElementById('run-btn');
+  btn.disabled = false;
+  btn.textContent = '▶ Run Screening';
+  document.getElementById('stat-row').innerHTML = '';
 }
 
 function resetUI(){

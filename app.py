@@ -197,7 +197,6 @@ def process_video_job(job_id, tmp_path):
                 "frame_extract_ms" : t2_ms,
                 "cnn_encode_ms"    : t3_ms,
                 "transformer_attn_ms": t4_ms,
-                "lstm_attn_ms"       : t4_ms,
                 "total_ms"         : total_ms,
             }
         }
